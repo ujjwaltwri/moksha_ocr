@@ -1,0 +1,7 @@
+# Production reverse proxy on the VM. Caddy fetches and renews HTTPS certificates itself.
+# Replace the hostnames with your real (sub)domains and point their DNS at the VM.
+
+api.moksha.example.com {
+	encode gzip
+	reverse_proxy localhost:8000
+}

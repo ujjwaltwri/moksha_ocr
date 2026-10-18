@@ -1,0 +1,14 @@
+# One file per college: worker/templates/<slug>.yaml (e.g. nsut.yaml).
+# Copy this file, fill it in from 3-5 real sample cards, then run scripts/seed_colleges.py.
+# Files starting with "_" are skipped.
+
+name: Example College of Engineering          # shown in the registration dropdown
+aliases: ["EXAMPLE COLLEGE", "ECE DELHI"]     # how the name appears on the card
+email_domains: ["example.ac.in"]              # college email domains, if any
+roll_regex: "^20\\d{2}[A-Z]{3}\\d{4}$"        # after normalising: uppercase, no spaces or dashes; null if unknown
+labels:
+  name: ["Name"]
+  roll: ["Roll No", "Enrolment No"]
+  valid: ["Valid upto", "Valid till"]
+require_validity_date: false
+allowed: true                                 # false hides it from the form and rejects registrations

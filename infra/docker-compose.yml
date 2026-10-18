@@ -1,0 +1,72 @@
+# Local dev:   cp .env.example .env && docker compose -f infra/docker-compose.yml --env-file .env up --build
+# Production:  same file on the VM, but point DATABASE_URL at managed Postgres and S3_* at the real
+#              bucket, and drop the postgres/minio services.
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: moksha
+      POSTGRES_PASSWORD: moksha
+      POSTGRES_DB: moksha
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U moksha"]
+      interval: 3s
+      retries: 20
+
+  redis:
+    image: redis:7
+    command: ["redis-server", "--appendonly", "yes"]   # queued jobs survive a restart
+    ports: ["6379:6379"]
+    volumes: [redisdata:/data]
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-moksha}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-moksha-secret}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [miniodata:/data]
+
+  minio-init:
+    image: minio/mc
+    depends_on: [minio]
+    entrypoint: >
+      sh -c "until mc alias set local http://minio:9000 $${S3_ACCESS_KEY:-moksha} $${S3_SECRET_KEY:-moksha-secret}; do sleep 1; done;
+             mc mb -p local/${S3_BUCKET:-moksha-ids};
+             mc anonymous set none local/${S3_BUCKET:-moksha-ids};
+             mc cors set local/${S3_BUCKET:-moksha-ids} /cors.json || true"
+    volumes: ["./minio-cors.json:/cors.json:ro"]
+
+  api:
+    build: ../api
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://moksha:moksha@postgres:5432/moksha
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:9000
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
+    ports: ["8000:8000"]
+
+  # Not started by default: the OCR pipeline lands on day 2.
+  # Start with: docker compose -f infra/docker-compose.yml --profile pipeline up worker
+  worker:
+    build: ../worker
+    profiles: ["pipeline"]
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://moksha:moksha@postgres:5432/moksha
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+    depends_on: [postgres, redis]
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
