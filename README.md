@@ -10,7 +10,8 @@ Full plan: the "Moksha Entry System — 6-Day Build Spec" doc.
 | --- | --- | --- |
 | 1 | Schema, presigned uploads, `/registrations`, `/status`, re-upload, colleges list | **Done** (this branch) |
 | 1 | Registration form + status page | Website team, using this API. Reference pages in `examples/` |
-| 2 | OCR pipeline in `worker/`, decision rules, review endpoints and dashboard | To do |
+| 2 | OCR pipeline in `worker/` and decision rules | **Done** (`day2-ocr`) |
+| 2 | Review endpoints and dashboard | To do |
 | 3 | Pass signing (`api/app/signing.py` is ready), QR email | To do |
 | 4 | Gate PWA, manifest, check-in sync | To do |
 
@@ -21,8 +22,10 @@ api/            FastAPI app
   app/          config, db, models, schemas, services, routers/, signing.py, migrate.py
   migrations/   plain SQL, applied in order by `python -m app.migrate`
   tests/        pytest against a real Postgres
-worker/         Arq worker (OCR pipeline lands here on day 2)
+worker/         Arq worker: reads each ID card and decides approve / review / reject
+  pipeline/     imaging (card, face, quality), ocr (RapidOCR), extract (fields + matching), decide (rules)
   templates/    one YAML per college; see _example.yaml
+  tests/        unit, real-OCR pipeline tests on synthetic cards, and worker-job tests
 infra/          docker-compose.yml (Postgres, Redis, MinIO, API), Caddyfile
 scripts/        gen_keys.py, seed_colleges.py, enqueue_pending.py
 ```
@@ -71,7 +74,12 @@ All bodies are JSON. Errors come back as `{"detail": "<message to show the stude
 
 ## Notes for the next days
 
-- **Worker:** the API queues `process_registration(registration_id)` for every registration. Don't run the worker until the pipeline exists; it would consume jobs and fail. After it ships, run `scripts/enqueue_pending.py` to queue everything still pending. Keep any reasons already on a registration (`duplicate_roll`, `other_college`): they're set at registration time.
+- **Worker:** the API queues `process_registration(registration_id)` for every registration. When the worker first starts, run `scripts/enqueue_pending.py` to queue anything registered before it existed. It keeps reasons set at registration time (`duplicate_roll`, `other_college`).
+- **OCR engine:** RapidOCR, which runs PaddleOCR's PP-OCR models as ONNX on CPU. The models ship inside the pip package, so nothing downloads at runtime. About 1.5–2.5 s per card including face detection; one worker process handles roughly 1,500–2,000 cards an hour. Scale with more worker processes.
+- **What the worker checks:** photo quality, college name on the card, the student's name (tolerates initials, middle names and OCR dropping spaces), roll number (exact, or one OCR slip on numbers of 8+ characters), roll format from the college template, validity date (only from a "Valid upto"-style label or a course session like 2022-26, never a birth date), a face on the card, and whether the same portrait already appears on another registration.
+- **Verdicts:** approved only when every check passes with no reasons; rejected only for a clearly expired card or an uninvited college; everything else goes to review with reasons. A bad photo that explains failed reads becomes one reason, `poor_image`, so the student can re-upload. Results go in `registrations.ocr` for reviewers.
+- **Duplicate cards** are detected by hashing the **portrait** on the card, not the whole card. Every card from one college shares a layout, so whole-card hashes collide.
+- **Tests:** `cd worker && pip install -r requirements-dev.txt && TEST_DATABASE_URL=... pytest`. Synthetic cards use scikit-image's public-domain astronaut photo; no real student data is in the repo.
 - **Duplicates:** at most one live (pending, processing or approved) registration per college and roll number, enforced by a unique index. A second one goes to `review` with `duplicate_roll`, and the first is flagged too.
 - **Roll numbers** are stored normalised: uppercase, spaces and dashes removed. Write template regexes against that form.
 - **Consent:** the wording lives in `api/app/consent.py` and reaches the form via `/form-config`. Bump `CONSENT_VERSION` in `.env` whenever the wording changes.

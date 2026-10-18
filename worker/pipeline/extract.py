@@ -57,13 +57,17 @@ def strip_label(text: str, labels: list[str]) -> tuple[str | None, str]:
 def identify_college(lines: list[OcrLine], colleges: list[CollegeInfo]) -> tuple[CollegeInfo | None, float]:
     """Best-matching college by name/aliases anywhere on the card."""
     text = " ".join(clean(l.text) for l in lines)
+    squashed = text.replace(" ", "")  # OCR often drops spaces in headers
     best, best_score = None, 0.0
     for c in colleges:
         for name in [c.name, *c.aliases]:
             n = clean(name)
             if len(n) < 3:
                 continue
-            score = fuzz.partial_ratio(n, text) if len(n) >= 8 else (100.0 if re.search(rf"\b{re.escape(n)}\b", text) else 0.0)
+            if len(n) >= 8:
+                score = max(fuzz.partial_ratio(n, text), fuzz.partial_ratio(n.replace(" ", ""), squashed))
+            else:  # short acronyms like "DTU" must appear as a whole word
+                score = 100.0 if re.search(rf"\b{re.escape(n)}\b", text) else 0.0
             if score > best_score:
                 best, best_score = c, score
     return (best, best_score) if best_score >= 85 else (None, best_score)
@@ -119,12 +123,16 @@ def name_score(form_name: str, candidate: str) -> float:
     """100 when every word of the form name is on the card line and the line isn't mostly other words.
 
     Allows initials and a missing/extra middle name. A line with only the surname scores low.
+    OCR often drops the spaces between words ("AARAVSHARMA"), so the space-free strings are
+    compared too.
     """
     f, c = _tok(form_name), _tok(candidate)
     if not f or not c:
         return 0.0
     cov_f, cov_c = _covered(f, c), _covered(c, f)
-    return round(100 * min(cov_f, max(cov_c, 0.5) + 0.5), 1) if cov_f >= 0.5 else round(100 * cov_f * 0.5, 1)
+    by_words = round(100 * min(cov_f, max(cov_c, 0.5) + 0.5), 1) if cov_f >= 0.5 else round(100 * cov_f * 0.5, 1)
+    by_letters = round(fuzz.ratio("".join(f), "".join(c)), 1)
+    return max(by_words, by_letters)
 
 
 def best_name_match(lines: list[OcrLine], form_name: str, template: dict | None) -> tuple[float, str | None]:
@@ -148,18 +156,40 @@ def best_name_match(lines: list[OcrLine], form_name: str, template: dict | None)
 
 # ---------- roll number ----------
 
-def roll_found(lines: list[OcrLine], form_roll: str) -> tuple[bool, str | None]:
-    """Is the roll number the student typed printed on the card?"""
+def _near(target: str, text: str, max_edits: int) -> str | None:
+    """A substring of `text` within `max_edits` edits of `target`, if any."""
+    from rapidfuzz.distance import Levenshtein
+
+    n = len(target)
+    for size in (n, n - 1, n + 1):
+        for i in range(0, max(0, len(text) - size) + 1):
+            chunk = text[i : i + size]
+            if Levenshtein.distance(target, chunk, score_cutoff=max_edits) <= max_edits:
+                return chunk
+    return None
+
+
+def roll_found(lines: list[OcrLine], form_roll: str) -> tuple[str, str | None]:
+    """Is the roll number the student typed printed on the card?
+
+    Returns ("exact" | "close" | "missing", text seen). "close" allows one OCR slip
+    (a dropped or misread character) on numbers of 8+ characters.
+    """
     target = norm_roll(form_roll)
     if len(target) < 4:
-        return False, None
-    for line in lines:
-        t = norm_roll(clean(line.text))
-        if target in t:
-            return True, target
+        return "missing", None
+    texts = [norm_roll(clean(l.text)) for l in lines]
     # Number split across two OCR boxes on the same row.
-    joined = norm_roll("".join(clean(l.text) for l in sorted(lines, key=lambda l: (round(l.cy / max(l.h, 1)), l.box[0]))))
-    return (target in joined), (target if target in joined else None)
+    texts.append(norm_roll("".join(clean(l.text) for l in sorted(lines, key=lambda l: (round(l.cy / max(l.h, 1)), l.box[0])))))
+    for t in texts:
+        if target in t:
+            return "exact", target
+    if len(target) >= 8:
+        for t in texts:
+            seen = _near(target, t, 1)
+            if seen:
+                return "close", seen
+    return "missing", None
 
 
 def roll_fits_format(roll: str, regex: str | None) -> bool | None:

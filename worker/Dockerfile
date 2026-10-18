@@ -1,7 +1,11 @@
 FROM python:3.12-slim
 WORKDIR /worker
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
-# Day 2: add paddleocr, paddlepaddle, opencv-python-headless, rapidfuzz, imagehash here.
-RUN pip install --no-cache-dir "arq>=0.26" "asyncpg>=0.30" "boto3>=1.35" "pyyaml>=6"
-COPY . .
+# libgl/glib for OpenCV; the OCR models ship inside the rapidocr wheel (no download at runtime)
+RUN apt-get update && apt-get install -y --no-install-recommends libglib2.0-0 libgomp1 && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY worker.py .
+COPY pipeline ./pipeline
+COPY templates ./templates
 CMD ["arq", "worker.WorkerSettings"]

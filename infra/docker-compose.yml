@@ -54,17 +54,18 @@ services:
       redis: {condition: service_started}
     ports: ["8000:8000"]
 
-  # Not started by default: the OCR pipeline lands on day 2.
-  # Start with: docker compose -f infra/docker-compose.yml --profile pipeline up worker
+  # OCR worker. Scale with: docker compose ... up --scale worker=3
   worker:
     build: ../worker
-    profiles: ["pipeline"]
     env_file: ../.env
     environment:
       DATABASE_URL: postgresql+asyncpg://moksha:moksha@postgres:5432/moksha
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://minio:9000
-    depends_on: [postgres, redis]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_started}
+    restart: unless-stopped
 
 volumes:
   pgdata:

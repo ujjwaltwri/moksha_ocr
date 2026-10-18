@@ -137,13 +137,14 @@ REASON_TEXT = {
     "other_college": "Your college isn't on our list yet. A volunteer will check it.",
     "college_not_allowed": "Your college isn't part of this year's Moksha.",
     "card_expired": "Your ID card has expired.",
+    "processing_error": "We couldn't read your ID card automatically. A volunteer will check it.",
 }
 
 STATUS_TEXT = {
     "pending": "Received. We're checking your ID card.",
     "processing": "We're checking your ID card.",
     "review": "A volunteer is reviewing your registration. This usually takes under 24 hours.",
-    "approved": "Approved! Your entry pass has been emailed to you.",
+    "approved": "Approved! Your entry pass will be emailed to you before the fest.",
     "rejected": "Your registration wasn't approved.",
 }
 
