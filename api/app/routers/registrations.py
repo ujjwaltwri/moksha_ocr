@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import Settings, get_settings
+from ..consent import CONSENT_DATASET, CONSENT_ENTRY
 from ..db import get_session
 from ..models import LIVE_STATUSES, AuditLog, College, Registration, RegStatus
 from ..schemas import (
@@ -15,6 +16,7 @@ from ..schemas import (
     REASON_TEXT,
     STATUS_TEXT,
     CollegeOut,
+    FormConfigOut,
     PresignIn,
     PresignOut,
     RegistrationIn,
@@ -47,6 +49,20 @@ async def require_uploaded(storage: Storage, key: str, settings: Settings) -> No
         raise HTTPException(422, "We didn't receive your ID card photo. Please upload it again.")
     if size > settings.max_upload_bytes:
         raise HTTPException(422, "Your photo is larger than 8 MB.")
+
+
+@router.get("/form-config", response_model=FormConfigOut)
+async def form_config(settings: Settings = Depends(get_settings)):
+    """Everything the registration form needs that might change: consent wording, captcha key, limits."""
+    return FormConfigOut(
+        consent_version=settings.consent_version,
+        consent_entry_text=CONSENT_ENTRY,
+        consent_dataset_text=CONSENT_DATASET,
+        turnstile_site_key=settings.turnstile_site_key,
+        max_upload_bytes=settings.max_upload_bytes,
+        allowed_content_types=sorted(ALLOWED_TYPES),
+        min_image_long_side_px=1000,
+    )
 
 
 @router.get("/colleges", response_model=list[CollegeOut])
@@ -174,7 +190,7 @@ async def create_registration(
         id=str(reg.id),
         status=reg.status.value,
         status_token=reg.status_token,
-        status_url=f"{settings.public_base_url}/status/{reg.status_token}",
+        status_url=settings.status_url_template.format(token=reg.status_token),
     )
 
 

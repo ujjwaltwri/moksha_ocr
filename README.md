@@ -9,7 +9,7 @@ Full plan: the "Moksha Entry System — 6-Day Build Spec" doc.
 | Day | Area | State |
 | --- | --- | --- |
 | 1 | Schema, presigned uploads, `/registrations`, `/status`, re-upload, colleges list | **Done** (this branch) |
-| 1 | Registration form + status page (Next.js) | To do (owner C) |
+| 1 | Registration form + status page | Website team, using this API. Reference pages in `examples/` |
 | 2 | OCR pipeline in `worker/`, decision rules, review endpoints and dashboard | To do |
 | 3 | Pass signing (`api/app/signing.py` is ready), QR email | To do |
 | 4 | Gate PWA, manifest, check-in sync | To do |
@@ -45,8 +45,11 @@ TEST_DATABASE_URL=postgresql+asyncpg://postgres@localhost:5432/moksha_test pytes
 
 ## API for the registration form
 
+The fest website hosts the form. Full spec: `docs/openapi.json` (also live at `/docs` on the API). Working plain-HTML reference pages: `examples/register.html` and `examples/status.html` (open with `?api=http://localhost:8000`).
+
 All bodies are JSON. Errors come back as `{"detail": "<message to show the student>"}`, or as FastAPI's 422 list for field errors.
 
+0. `GET /form-config` → consent wording and version, Turnstile site key, upload limits. Show the consent text from here; never hardcode it.
 1. `GET /colleges` → `[{id, name}]` for the dropdown. Add an "Other" option yourself.
 2. `POST /uploads/presign` `{content_type, size}` → `{url, fields, key, expires_in}`.
    Upload the file with a multipart **POST** to `url`, sending every entry of `fields` first and the file last as `file`. JPG, PNG or HEIC only, max 8 MB.
@@ -71,6 +74,7 @@ All bodies are JSON. Errors come back as `{"detail": "<message to show the stude
 - **Worker:** the API queues `process_registration(registration_id)` for every registration. Don't run the worker until the pipeline exists; it would consume jobs and fail. After it ships, run `scripts/enqueue_pending.py` to queue everything still pending. Keep any reasons already on a registration (`duplicate_roll`, `other_college`): they're set at registration time.
 - **Duplicates:** at most one live (pending, processing or approved) registration per college and roll number, enforced by a unique index. A second one goes to `review` with `duplicate_roll`, and the first is flagged too.
 - **Roll numbers** are stored normalised: uppercase, spaces and dashes removed. Write template regexes against that form.
-- **Consent:** `CONSENT_VERSION` in `.env` must match what the form sends. Bump both whenever the wording changes.
+- **Consent:** the wording lives in `api/app/consent.py` and reaches the form via `/form-config`. Bump `CONSENT_VERSION` in `.env` whenever the wording changes.
+- **Website settings:** `CORS_ORIGINS` must list the website's origin, and the storage bucket needs a CORS rule for the same origin (POST). `STATUS_URL_TEMPLATE` is the website's status page URL with `{token}`.
 - **Keys:** run `scripts/gen_keys.py` once. The signing key goes in the server's `.env`, never in git.
 - Schema additions beyond the spec: `colleges.slug`, `colleges.allowed`, `registrations.college_other`, `registrations.college_email`, `registrations.client_ip`, `registrations.updated_at`, `audit_log.detail`.

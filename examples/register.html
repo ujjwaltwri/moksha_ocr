@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moksha Registration (reference)</title>
+<!--
+  Reference implementation of the registration form for the website team.
+  Plain HTML + JS, no build step. Copy the logic in the script block; style it however you like.
+  Set API below (or open with ?api=https://your-api-host).
+-->
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 34rem; margin: 2rem auto; padding: 0 1rem; color: #1c1c1c; }
+  label { display: block; margin-top: 1rem; font-weight: 600; }
+  input, select { width: 100%; padding: .6rem; font: inherit; box-sizing: border-box; margin-top: .25rem; }
+  .check { display: flex; gap: .6rem; font-weight: 400; align-items: flex-start; }
+  .check input { width: auto; margin-top: .35rem; }
+  .hint { color: #666; font-size: .9rem; font-weight: 400; }
+  .error { color: #b00020; margin-top: .5rem; }
+  button { margin-top: 1.5rem; padding: .8rem 1.4rem; font: inherit; font-weight: 600; cursor: pointer; }
+  #done { display: none; padding: 1rem; background: #eef8ee; border-radius: 8px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h1>Register for Moksha</h1>
+
+<form id="form" novalidate>
+  <label>Full name <span class="hint">(as printed on your ID card)</span>
+    <input name="name" required minlength="2" maxlength="120" autocomplete="name"></label>
+
+  <label>College
+    <select name="college_id" required><option value="">Loading…</option></select></label>
+  <label id="otherWrap" hidden>College name
+    <input name="college_other" maxlength="200"></label>
+
+  <label>Roll / enrolment number <span class="hint">(as printed on your card)</span>
+    <input name="roll_no" required maxlength="40"></label>
+
+  <label>Course and year <input name="course" maxlength="120" placeholder="e.g. B.Tech CSE, 2nd year"></label>
+
+  <label>Email <span class="hint">Use your college email if your college has one. Your entry pass is sent here.</span>
+    <input name="email" type="email" required autocomplete="email"></label>
+
+  <label>Phone <span class="hint">(for contact on fest day)</span>
+    <input name="phone" type="tel" autocomplete="tel" placeholder="98765 43210"></label>
+
+  <label>Front of your college ID card
+    <span class="hint">Lay it flat, no glare, whole card in frame. JPG, PNG or HEIC, up to 8 MB.</span>
+    <input name="card" type="file" accept="image/jpeg,image/png,image/heic,image/heif" required></label>
+
+  <label class="check"><input type="checkbox" name="consent_entry" required><span id="consentEntry"></span></label>
+  <label class="check"><input type="checkbox" name="consent_dataset"><span id="consentDataset"></span></label>
+
+  <div id="captcha"></div>
+  <div class="error" id="error" role="alert"></div>
+  <button type="submit" id="submit">Register</button>
+</form>
+
+<div id="done">
+  <h2>You're registered</h2>
+  <p>We're checking your ID card. Your entry pass will be emailed once you're approved.</p>
+  <p>Keep this link to check your status: <a id="statusLink"></a></p>
+</div>
+
+<script>
+const API = new URLSearchParams(location.search).get("api") || "http://localhost:8000";
+const $ = (s) => document.querySelector(s);
+const form = $("#form");
+let config, captchaToken = null;
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(messageFrom(body, res.status));
+  return body;
+}
+
+// FastAPI returns {"detail": "text"} for our errors, or {"detail": [{loc, msg}]} for field errors.
+function messageFrom(body, status) {
+  if (typeof body.detail === "string") return body.detail;
+  if (Array.isArray(body.detail) && body.detail.length) {
+    const d = body.detail[0];
+    const field = d.loc?.[d.loc.length - 1];
+    return (field && field !== "body" ? field.replace("_", " ") + ": " : "") + d.msg.replace(/^Value error, /, "");
+  }
+  return status === 429 ? "Too many attempts. Please try again later." : "Something went wrong. Please try again.";
+}
+
+async function init() {
+  config = await api("/form-config");
+  $("#consentEntry").textContent = config.consent_entry_text;
+  $("#consentDataset").textContent = config.consent_dataset_text;
+
+  const colleges = await api("/colleges");
+  const sel = form.college_id;
+  sel.innerHTML = '<option value="">Select your college</option>' +
+    colleges.map((c) => `<option value="${c.id}">${c.name.replace(/</g, "&lt;")}</option>`).join("") +
+    '<option value="other">Other (not in the list)</option>';
+  sel.onchange = () => { $("#otherWrap").hidden = sel.value !== "other"; };
+
+  if (config.turnstile_site_key) {
+    const s = document.createElement("script");
+    s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstile";
+    s.async = true;
+    document.head.appendChild(s);
+  }
+}
+window.onTurnstile = () => turnstile.render("#captcha", {
+  sitekey: config.turnstile_site_key,
+  callback: (t) => { captchaToken = t; },
+});
+
+// Catch bad photos before uploading, so the student fixes them now instead of waiting for review.
+async function checkImage(file) {
+  if (!config.allowed_content_types.includes(file.type.toLowerCase())) throw new Error("Upload a JPG, PNG or HEIC photo.");
+  if (file.size > config.max_upload_bytes) throw new Error("Your photo is larger than 8 MB.");
+  if (file.type.includes("hei")) return; // most browsers can't decode HEIC; the server checks it
+  const img = await createImageBitmap(file);
+  if (Math.max(img.width, img.height) < config.min_image_long_side_px)
+    throw new Error("Your photo is too small. Take a closer photo of the card.");
+}
+
+async function upload(file) {
+  const p = await api("/uploads/presign", {
+    method: "POST",
+    body: JSON.stringify({ content_type: file.type.toLowerCase(), size: file.size }),
+  });
+  const fd = new FormData();
+  Object.entries(p.fields).forEach(([k, v]) => fd.append(k, v));
+  fd.append("file", file); // must be the last field
+  const res = await fetch(p.url, { method: "POST", body: fd });
+  if (!res.ok) throw new Error("Upload failed. Please try again.");
+  return p.key;
+}
+
+form.onsubmit = async (e) => {
+  e.preventDefault();
+  $("#error").textContent = "";
+  if (!form.reportValidity()) return;
+  const btn = $("#submit");
+  btn.disabled = true;
+  btn.textContent = "Uploading…";
+  try {
+    const file = form.card.files[0];
+    await checkImage(file);
+    const key = await upload(file);
+    btn.textContent = "Submitting…";
+    const other = form.college_id.value === "other";
+    const reg = await api("/registrations", {
+      method: "POST",
+      body: JSON.stringify({
+        name: form.name.value,
+        college_id: other ? null : Number(form.college_id.value),
+        college_other: other ? form.college_other.value : null,
+        roll_no: form.roll_no.value,
+        course: form.course.value || null,
+        email: form.email.value,
+        phone: form.phone.value || null,
+        id_image_key: key,
+        consent_entry: form.consent_entry.checked,
+        consent_dataset: form.consent_dataset.checked,
+        consent_version: config.consent_version,
+        captcha_token: captchaToken,
+      }),
+    });
+    form.hidden = true;
+    $("#done").style.display = "block";
+    const link = $("#statusLink");
+    link.href = link.textContent = reg.status_url;
+  } catch (err) {
+    $("#error").textContent = err.message;
+    if (window.turnstile) { turnstile.reset(); captchaToken = null; }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Register";
+  }
+};
+
+init().catch((err) => { $("#error").textContent = "Couldn't load the form: " + err.message; });
+</script>
+</body>
+</html>

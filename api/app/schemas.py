@@ -35,6 +35,16 @@ class ReuploadIn(BaseModel):
         return validate_upload_key(v)
 
 
+class FormConfigOut(BaseModel):
+    consent_version: str
+    consent_entry_text: str
+    consent_dataset_text: str
+    turnstile_site_key: str | None
+    max_upload_bytes: int
+    allowed_content_types: list[str]
+    min_image_long_side_px: int
+
+
 class CollegeOut(BaseModel):
     id: int
     name: str

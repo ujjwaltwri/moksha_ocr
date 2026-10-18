@@ -22,15 +22,17 @@ class Settings(BaseSettings):
 
     # Abuse protection
     turnstile_secret: str | None = None         # unset = skip (dev only)
+    turnstile_site_key: str | None = None       # public; the form needs it to show the widget
     rate_limit_per_ip_per_hour: int = 20
 
     # Consent text version shown on the form; bump whenever the wording changes
     consent_version: str = "2026-10-18.v1"
 
-    # Origins allowed to call the API (the Next.js app)
+    # Origins allowed to call the API (the fest website hosting the form)
     cors_origins: list[str] = ["http://localhost:3000"]
 
-    public_base_url: str = "http://localhost:3000"
+    # Where the student's status page lives on the website. {token} is replaced.
+    status_url_template: str = "http://localhost:3000/status/{token}"
 
 
 @lru_cache

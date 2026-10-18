@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moksha Registration Status (reference)</title>
+<!-- Reference status page. Open as status.html?token=<status_token>[&api=https://your-api-host] -->
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 34rem; margin: 2rem auto; padding: 0 1rem; color: #1c1c1c; }
+  .badge { display: inline-block; padding: .2rem .7rem; border-radius: 999px; font-weight: 600; background: #eee; }
+  .approved { background: #dff3e0; } .review { background: #fff3cd; } .rejected { background: #fde2e2; }
+  .error { color: #b00020; }
+  button { padding: .7rem 1.2rem; font: inherit; font-weight: 600; margin-top: .5rem; }
+</style>
+</head>
+<body>
+<h1>Your Moksha registration</h1>
+<div id="out">Loading…</div>
+<div id="reupload" hidden>
+  <p><strong>Upload a new photo of your ID card</strong></p>
+  <input type="file" id="file" accept="image/jpeg,image/png,image/heic,image/heif">
+  <button id="send">Upload</button>
+</div>
+<p class="error" id="error"></p>
+
+<script>
+const q = new URLSearchParams(location.search);
+// Also accepts /status/<token> style URLs.
+const TOKEN = q.get("token") || location.pathname.split("/").filter(Boolean).pop();
+const API = q.get("api") || "http://localhost:8000";
+const $ = (s) => document.querySelector(s);
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : "Something went wrong.");
+  return body;
+}
+
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+async function load() {
+  const s = await api(`/status/${encodeURIComponent(TOKEN)}`);
+  $("#out").innerHTML = `
+    <p>${esc(s.name)} · ${esc(s.college)}</p>
+    <p><span class="badge ${s.status}">${s.status}</span></p>
+    <p>${esc(s.message)}</p>
+    ${s.reasons.length ? `<ul>${s.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
+    `;
+  $("#reupload").hidden = !s.can_reupload;
+}
+
+$("#send").onclick = async () => {
+  $("#error").textContent = "";
+  const file = $("#file").files[0];
+  if (!file) return;
+  try {
+    const p = await api(`/status/${encodeURIComponent(TOKEN)}/reupload/presign`, {
+      method: "POST", body: JSON.stringify({ content_type: file.type.toLowerCase(), size: file.size }),
+    });
+    const fd = new FormData();
+    Object.entries(p.fields).forEach(([k, v]) => fd.append(k, v));
+    fd.append("file", file);
+    if (!(await fetch(p.url, { method: "POST", body: fd })).ok) throw new Error("Upload failed. Please try again.");
+    await api(`/status/${encodeURIComponent(TOKEN)}/reupload`, { method: "POST", body: JSON.stringify({ id_image_key: p.key }) });
+    await load();
+  } catch (err) { $("#error").textContent = err.message; }
+};
+
+load().catch((err) => { $("#out").textContent = ""; $("#error").textContent = err.message; });
+</script>
+</body>
+</html>

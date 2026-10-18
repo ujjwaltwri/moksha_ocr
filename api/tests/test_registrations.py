@@ -180,3 +180,10 @@ async def test_simultaneous_same_roll_never_creates_two_live_registrations(clien
     assert all(r.status_code == 201 for r in results), [r.text for r in results]
     statuses = sorted(r.json()["status"] for r in results)
     assert statuses.count("pending") == 1 and statuses.count("review") == 5
+
+
+async def test_form_config(client):
+    r = (await client.get("/form-config")).json()
+    assert r["consent_version"] == get_settings().consent_version
+    assert "30 days" in r["consent_entry_text"]
+    assert "image/jpeg" in r["allowed_content_types"]
