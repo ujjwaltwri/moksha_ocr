@@ -1,0 +1,22 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+.idea/
+.vscode/
+
+# Signing secrets: never commit
+android/key.properties
+*.jks
+*.keystore
+ios/**/*.mobileprovision
+*.p12
+
+# Test data: regenerate with tools/make_test_passes.py
+tools/test_data/
+__pycache__/
