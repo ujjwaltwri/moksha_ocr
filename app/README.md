@@ -10,7 +10,7 @@ The gate keeps working with no internet. Each phone holds the day's pass list an
 2. The Ed25519 signature is checked against the public key built into the app. A forged or edited QR shows **INVALID PASS**.
 3. The event ID and the fest day are checked.
 4. The pass is looked up in the on-phone pass list. It can come back **not found**, **cancelled** or **already used**, and an already-used pass shows the gate and time of first entry.
-5. A **green** screen shows the face cropped from the ID card, the name, college and roll number, and the wristband colour for today. The volunteer taps **Admit**, or **Deny** with a reason.
+5. A **green** screen shows the face cropped from the ID card, with the name, college and roll number. The volunteer taps **Admit**, or **Deny** with a reason.
 6. The decision is saved on the phone and uploaded in the background. Other gates hear about it within seconds.
 
 A red screen has no Admit button. When the pass is real, the red screen also shows whose pass it is, which helps spot shared screenshots.

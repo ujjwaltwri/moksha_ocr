@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../config.dart';
 import '../services/app_services.dart';
 import '../theme.dart';
+import '../widgets/brand.dart';
 import '../widgets/qr_capture.dart';
 
 /// Connects a phone to the server. An admin shows a setup QR from the admin
@@ -99,31 +100,60 @@ class _SetupScreenState extends State<SetupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-          title: Text(widget.firstRun ? 'Set up this phone' : 'Connection')),
+      appBar: widget.firstRun ? null : AppBar(title: const Text('Connection')),
       body: SafeArea(
         child: Form(
           key: _form,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+            padding: EdgeInsets.fromLTRB(20, widget.firstRun ? 28 : 8, 20, 32),
             children: [
               if (widget.firstRun) ...[
+                const Row(children: [
+                  NsutLogo(size: 64),
+                  SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        BrandEyebrow(),
+                        SizedBox(height: 2),
+                        Text('Gate scanner',
+                            style: TextStyle(
+                                fontSize: 15, color: GateColors.muted)),
+                      ],
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 28),
+                Text('Set up this phone',
+                    style: Theme.of(context).textTheme.headlineMedium),
+                const SizedBox(height: 8),
                 const Text(
                   'Ask the gate lead to show the setup code from the admin page, then scan it.',
                   style: TextStyle(fontSize: 16, color: GateColors.muted),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
               ],
               FilledButton.icon(
                 onPressed: _scanSetupCode,
-                icon: const Icon(Icons.qr_code_scanner),
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(64)),
+                icon: const Icon(Icons.qr_code_scanner, size: 26),
                 label: const Text('Scan setup code'),
               ),
               const SizedBox(height: 28),
-              const Text('Or enter the details',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w700, color: GateColors.muted)),
-              const SizedBox(height: 12),
+              const Row(children: [
+                Expanded(child: Divider(color: GateColors.line)),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Text('or enter the details',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: GateColors.muted)),
+                ),
+                Expanded(child: Divider(color: GateColors.line)),
+              ]),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _url,
                 keyboardType: TextInputType.url,
@@ -169,9 +199,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 decoration: const InputDecoration(labelText: 'Fest day'),
                 items: [
                   for (final d in AppConfig.festDays)
-                    DropdownMenuItem(
-                        value: d.number,
-                        child: Text('${d.label} · ${d.wristband} wristband')),
+                    DropdownMenuItem(value: d.number, child: Text(d.label)),
                 ],
                 onChanged: (v) => setState(() => _day = v ?? _day),
               ),
@@ -185,8 +213,8 @@ class _SetupScreenState extends State<SetupScreen> {
               const SizedBox(height: 28),
               FilledButton(
                 onPressed: _saving ? null : _save,
-                style: FilledButton.styleFrom(
-                    backgroundColor: GateColors.accent),
+                style:
+                    FilledButton.styleFrom(backgroundColor: GateColors.accent),
                 child: Text(_saving ? 'Saving…' : 'Save'),
               ),
             ],

@@ -4,6 +4,7 @@ import '../config.dart';
 import '../services/api.dart';
 import '../services/app_services.dart';
 import '../theme.dart';
+import 'history_screen.dart';
 import 'setup_screen.dart';
 
 /// Opens settings after the gate lead enters the admin PIN, so volunteers
@@ -45,10 +46,9 @@ class SettingsScreen extends StatelessWidget {
               },
             ),
             const SizedBox(height: 6),
-            Text(
-              'Wristband: ${AppConfig.dayInfo(app.settings.day).wristband}. '
+            const Text(
               'Passes that don\'t include this day show red.',
-              style: const TextStyle(color: GateColors.muted),
+              style: TextStyle(color: GateColors.muted),
             ),
             const _Heading('Connection'),
             _InfoRow('Gate', app.settings.gate),
@@ -58,8 +58,15 @@ class SettingsScreen extends StatelessWidget {
             OutlinedButton.icon(
               icon: const Icon(Icons.edit_outlined),
               label: const Text('Change connection or gate name'),
-              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => const SetupScreen())),
+              onPressed: () => Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const SetupScreen())),
+            ),
+            const _Heading('Entries'),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.history),
+              label: const Text('Entry log for this phone'),
+              onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const HistoryScreen())),
             ),
             const _Heading('Pass list'),
             OutlinedButton.icon(
@@ -80,8 +87,7 @@ class SettingsScreen extends StatelessWidget {
             const SizedBox(height: 10),
             OutlinedButton.icon(
               icon: const Icon(Icons.delete_outline, color: GateColors.stop),
-              style: OutlinedButton.styleFrom(
-                  foregroundColor: GateColors.stop),
+              style: OutlinedButton.styleFrom(foregroundColor: GateColors.stop),
               label: const Text('Clear for a new day'),
               onPressed: () => _confirmWipe(context, app),
             ),
@@ -121,8 +127,8 @@ class SettingsScreen extends StatelessWidget {
     await app.db.wipeForNewDay();
     await app.sync.refreshCounts();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cleared. Download the new pass list.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Cleared. Download the new pass list.')));
     }
   }
 }
@@ -154,8 +160,8 @@ class _InfoRow extends StatelessWidget {
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           SizedBox(
               width: 90,
-              child: Text(label,
-                  style: const TextStyle(color: GateColors.muted))),
+              child:
+                  Text(label, style: const TextStyle(color: GateColors.muted))),
           Expanded(
               child: SelectableText(value,
                   style: const TextStyle(fontWeight: FontWeight.w600))),

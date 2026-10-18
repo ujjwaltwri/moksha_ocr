@@ -5,8 +5,8 @@ import '../config.dart';
 import '../services/api.dart';
 import '../services/app_services.dart';
 import '../theme.dart';
+import '../widgets/brand.dart';
 import '../widgets/sync_badge.dart';
-import 'history_screen.dart';
 import 'scan_screen.dart';
 import 'settings_screen.dart';
 
@@ -18,22 +18,11 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = Services.of(context);
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Moksha Gate'),
-        actions: [
-          IconButton(
-            tooltip: 'Settings',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => openSettings(context),
-          ),
-        ],
-      ),
       body: SafeArea(
         child: ListenableBuilder(
           listenable: Listenable.merge([app.sync, app.settings]),
           builder: (context, _) {
             final sync = app.sync;
-            final day = AppConfig.dayInfo(app.settings.day);
             final ready = app.keyError == null && sync.passCount > 0;
             return Column(
               children: [
@@ -41,17 +30,10 @@ class HomeScreen extends StatelessWidget {
                   child: RefreshIndicator(
                     onRefresh: sync.syncNow,
                     child: ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
                       children: [
-                        _GateHeader(gate: app.settings.gate, day: day),
+                        _GateHeader(app: app),
                         const SizedBox(height: 16),
-                        if (app.keyError != null) ...[
-                          _Banner(
-                              color: GateColors.stop,
-                              icon: Icons.error_outline,
-                              text: app.keyError!),
-                          const SizedBox(height: 16),
-                        ],
                         if (sync.conflicts > 0) ...[
                           _Banner(
                             color: GateColors.warn,
@@ -61,60 +43,41 @@ class HomeScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 16),
                         ],
+                        _ReadyCard(app: app),
+                        const SizedBox(height: 16),
                         Row(children: [
                           Expanded(
                               child: _Stat(
-                                  label: 'Admitted here today',
-                                  value: '${sync.admittedHere}')),
+                                  label: 'Admitted at this gate',
+                                  value: sync.admittedHere)),
                           const SizedBox(width: 12),
                           Expanded(
                               child: _Stat(
-                                  label: 'Passes on phone',
-                                  value: NumberFormat.decimalPattern()
-                                      .format(sync.passCount))),
+                                  label: 'Admitted at all gates',
+                                  value: sync.admittedAll)),
                         ]),
-                        const SizedBox(height: 16),
-                        _PassListCard(app: app),
-                        const SizedBox(height: 16),
-                        _SyncCard(app: app),
                       ],
                     ),
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-                  child: Column(children: [
-                    if (!ready && app.keyError == null)
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 10),
-                        child: Text(
-                          'Download the pass list before scanning.',
-                          style: TextStyle(color: GateColors.muted),
-                        ),
-                      ),
-                    FilledButton.icon(
-                      onPressed: ready
-                          ? () => Navigator.of(context).push(MaterialPageRoute(
-                              builder: (_) => const ScanScreen()))
-                          : null,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: GateColors.accent,
-                        minimumSize: const Size.fromHeight(64),
-                        textStyle: const TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.w800),
-                      ),
-                      icon: const Icon(Icons.qr_code_scanner, size: 28),
-                      label: const Text('Start scanning'),
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                  child: FilledButton.icon(
+                    onPressed: ready
+                        ? () => Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => const ScanScreen()))
+                        : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: GateColors.accent,
+                      minimumSize: const Size.fromHeight(68),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18)),
+                      textStyle: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.w800),
                     ),
-                    const SizedBox(height: 10),
-                    OutlinedButton.icon(
-                      onPressed: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) => const HistoryScreen())),
-                      icon: const Icon(Icons.history),
-                      label: const Text('Entry log'),
-                    ),
-                  ]),
+                    icon: const Icon(Icons.qr_code_scanner, size: 28),
+                    label: Text(ready ? 'Scan passes' : 'Not ready to scan'),
+                  ),
                 ),
               ],
             );
@@ -125,68 +88,83 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
+/// Dark card naming this gate and today's fest day.
 class _GateHeader extends StatelessWidget {
-  const _GateHeader({required this.gate, required this.day});
-  final String gate;
-  final FestDay day;
+  const _GateHeader({required this.app});
+  final AppServices app;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(gate,
-                  style: const TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.w800,
-                      height: 1.1,
-                      color: GateColors.ink)),
-              const SizedBox(height: 4),
-              Text(day.label,
-                  style: const TextStyle(
-                      fontSize: 16, color: GateColors.muted)),
-            ],
-          ),
+    final day = AppConfig.dayInfo(app.settings.day);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 16, 10, 20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [GateColors.inkSoft, GateColors.ink],
         ),
-        WristbandChip(label: '${day.wristband} band', color: day.color),
-      ],
-    );
-  }
-}
-
-class _Stat extends StatelessWidget {
-  const _Stat({required this.label, required this.value});
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(value,
-                style: const TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w800,
-                    fontFeatures: [FontFeature.tabularFigures()])),
-            const SizedBox(height: 2),
-            Text(label, style: const TextStyle(color: GateColors.muted)),
-          ],
-        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const NsutLogo(size: 44),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  BrandEyebrow(),
+                  SizedBox(height: 2),
+                  Text('Gate scanner',
+                      style: TextStyle(color: Colors.white70, fontSize: 14)),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Gate lead settings',
+              color: Colors.white70,
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: () => openSettings(context),
+            ),
+          ]),
+          const SizedBox(height: 22),
+          Text(app.settings.gate,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w800,
+                  height: 1.1)),
+          const SizedBox(height: 10),
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: GateColors.accent,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(day.label,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800)),
+            ),
+            const SizedBox(width: 8),
+            SyncBadge(sync: app.sync, onDark: true),
+          ]),
+        ],
       ),
     );
   }
 }
 
-class _PassListCard extends StatelessWidget {
-  const _PassListCard({required this.app});
+/// The three things a phone needs before the gates open.
+class _ReadyCard extends StatelessWidget {
+  const _ReadyCard({required this.app});
   final AppServices app;
 
   Future<void> _download(BuildContext context, {required bool full}) async {
@@ -204,47 +182,71 @@ class _PassListCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sync = app.sync;
-    final updated = sync.passListUpdatedAt;
     final empty = sync.passCount == 0;
+    final updated = sync.passListUpdatedAt;
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Pass list',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-            const SizedBox(height: 4),
-            Text(
-              updated == null
-                  ? 'Not downloaded yet. Download it on Wi-Fi before the gates open.'
-                  : 'Updated ${_ago(updated)}. New passes and cancellations are picked up every minute while online.',
-              style: const TextStyle(color: GateColors.muted),
+            Text('Ready to scan?',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            _Check(
+              ok: app.keyError == null,
+              title: 'Pass key',
+              detail: app.keyError ?? 'Built in. Fake or edited QRs show red.',
             ),
-            if (sync.downloading) ...[
-              const SizedBox(height: 14),
-              LinearProgressIndicator(
-                value: (sync.downloadTotal ?? 0) > 0
-                    ? sync.downloaded / sync.downloadTotal!
-                    : null,
-                minHeight: 6,
-                borderRadius: BorderRadius.circular(3),
+            _Check(
+              ok: !empty,
+              title: empty
+                  ? 'Pass list'
+                  : '${NumberFormat.decimalPattern().format(sync.passCount)} passes on this phone',
+              detail: empty
+                  ? 'Not downloaded. Download it on Wi-Fi before the gates open.'
+                  : 'Updated ${_ago(updated)}. Changes arrive every minute while online.',
+              trailing: sync.downloading
+                  ? null
+                  : TextButton(
+                      onPressed: () => _download(context, full: empty),
+                      child: Text(empty ? 'Download' : 'Update'),
+                    ),
+            ),
+            if (sync.downloading)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(36, 0, 0, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    LinearProgressIndicator(
+                      value: (sync.downloadTotal ?? 0) > 0
+                          ? sync.downloaded / sync.downloadTotal!
+                          : null,
+                      minHeight: 6,
+                      color: GateColors.accent,
+                      backgroundColor: GateColors.accentSoft,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      sync.downloadTotal == null
+                          ? '${sync.downloaded} passes…'
+                          : '${sync.downloaded} of ${sync.downloadTotal} passes',
+                      style: const TextStyle(color: GateColors.muted),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                sync.downloadTotal == null
-                    ? '${sync.downloaded} passes…'
-                    : '${sync.downloaded} of ${sync.downloadTotal} passes',
-                style: const TextStyle(color: GateColors.muted),
-              ),
-            ] else ...[
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () => _download(context, full: empty),
-                icon: const Icon(Icons.download),
-                label: Text(empty ? 'Download pass list' : 'Check for updates'),
-              ),
-            ],
+            _Check(
+              ok: sync.online,
+              optional: true,
+              title: sync.online ? 'Synced with other gates' : 'Offline',
+              detail: sync.lastError ??
+                  (sync.lastSyncAt == null
+                      ? 'Scanning works offline; entries upload when the network is back.'
+                      : 'Last synced ${_ago(sync.lastSyncAt)}.'),
+            ),
           ],
         ),
       ),
@@ -252,41 +254,81 @@ class _PassListCard extends StatelessWidget {
   }
 }
 
-class _SyncCard extends StatelessWidget {
-  const _SyncCard({required this.app});
-  final AppServices app;
+class _Check extends StatelessWidget {
+  const _Check({
+    required this.ok,
+    required this.title,
+    required this.detail,
+    this.optional = false,
+    this.trailing,
+  });
+
+  final bool ok;
+  final String title;
+  final String detail;
+
+  /// Not needed to scan: shown amber instead of red when missing.
+  final bool optional;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
-    final sync = app.sync;
+    final (icon, color) = ok
+        ? (Icons.check_circle, GateColors.go)
+        : optional
+            ? (Icons.cloud_off_outlined, GateColors.warn)
+            : (Icons.error, GateColors.stop);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icon, color: color, size: 24),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 2),
+              Text(detail,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color:
+                          ok || optional ? GateColors.muted : GateColors.stop,
+                      fontSize: 13.5)),
+            ],
+          ),
+        ),
+        if (trailing != null) trailing!,
+      ]),
+    );
+  }
+}
+
+class _Stat extends StatelessWidget {
+  const _Stat({required this.label, required this.value});
+  final String label;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              const Expanded(
-                child: Text('Sync with other gates',
-                    style:
-                        TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-              ),
-              SyncBadge(sync: sync),
-            ]),
-            const SizedBox(height: 6),
-            Text(
-              sync.lastSyncAt == null
-                  ? 'Not synced yet. Scanning still works offline.'
-                  : 'Last synced ${_ago(sync.lastSyncAt!)}. Scanning works offline; entries upload when the network is back.',
-              style: const TextStyle(color: GateColors.muted),
-            ),
-            if (sync.lastError != null) ...[
-              const SizedBox(height: 8),
-              Text(sync.lastError!,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: GateColors.stop)),
-            ],
+            Text(NumberFormat.decimalPattern().format(value),
+                style: const TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    height: 1.1,
+                    fontFeatures: [FontFeature.tabularFigures()])),
+            const SizedBox(height: 4),
+            Text(label,
+                style: const TextStyle(color: GateColors.muted, fontSize: 13)),
           ],
         ),
       ),
@@ -318,7 +360,8 @@ class _Banner extends StatelessWidget {
   }
 }
 
-String _ago(DateTime t) {
+String _ago(DateTime? t) {
+  if (t == null) return 'never';
   final d = DateTime.now().difference(t);
   if (d.inSeconds < 60) return 'just now';
   if (d.inMinutes < 60) return '${d.inMinutes} min ago';

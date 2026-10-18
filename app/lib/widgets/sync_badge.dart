@@ -53,36 +53,3 @@ class SyncBadge extends StatelessWidget {
     );
   }
 }
-
-/// Small coloured chip naming today's wristband.
-class WristbandChip extends StatelessWidget {
-  const WristbandChip(
-      {super.key, required this.label, required this.color, this.large = false});
-
-  final String label;
-  final Color color;
-  final bool large;
-
-  @override
-  Widget build(BuildContext context) {
-    final dark = color.computeLuminance() < 0.5;
-    return Container(
-      padding: EdgeInsets.symmetric(
-          horizontal: large ? 16 : 10, vertical: large ? 8 : 4),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white, width: large ? 2 : 0),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: dark ? Colors.white : GateColors.ink,
-          fontWeight: FontWeight.w800,
-          fontSize: large ? 18 : 12,
-          letterSpacing: 0.3,
-        ),
-      ),
-    );
-  }
-}

@@ -1,5 +1,3 @@
-import 'package:flutter/material.dart';
-
 /// Build-time settings. Pass them with --dart-define, for example:
 ///
 ///   flutter build apk --release \
@@ -32,22 +30,17 @@ class AppConfig {
   /// still holding up their phone after "Admit" doesn't show "already used".
   static const rescanCooldown = Duration(seconds: 4);
 
-  /// Fest days and the wristband each one gets. Edit to match the plan.
-  static const festDays = <FestDay>[
-    FestDay(1, 'Red', Color(0xFFE53935)),
-    FestDay(2, 'Blue', Color(0xFF1E88E5)),
-    FestDay(3, 'Yellow', Color(0xFFFDD835)),
-  ];
+  /// Fest days. Each pass lists the days it is valid for, and the gate
+  /// checks today against it. Edit to match the plan.
+  static const festDays = <FestDay>[FestDay(1), FestDay(2), FestDay(3)];
 
-  static FestDay dayInfo(int day) => festDays.firstWhere((d) => d.number == day,
-      orElse: () => FestDay(day, 'Any', Colors.grey));
+  static FestDay dayInfo(int day) =>
+      festDays.firstWhere((d) => d.number == day, orElse: () => FestDay(day));
 }
 
 class FestDay {
-  const FestDay(this.number, this.wristband, this.color);
+  const FestDay(this.number);
   final int number;
-  final String wristband;
-  final Color color;
 
   String get label => 'Day $number';
 }

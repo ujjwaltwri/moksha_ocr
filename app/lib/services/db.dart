@@ -7,10 +7,10 @@ import '../models.dart';
 class GateDb {
   late final Database _db;
 
-  Future<void> open() async {
-    final dir = await getDatabasesPath();
+  /// [path] is for tests; the app uses gate.db in the databases folder.
+  Future<void> open({String? path}) async {
     _db = await openDatabase(
-      p.join(dir, 'gate.db'),
+      path ?? p.join(await getDatabasesPath(), 'gate.db'),
       version: 1,
       onCreate: (db, _) async {
         await db.execute('''
@@ -74,7 +74,8 @@ class GateDb {
   }
 
   Future<int> passCount() async =>
-      Sqflite.firstIntValue(await _db.rawQuery('SELECT COUNT(*) FROM passes')) ??
+      Sqflite.firstIntValue(
+          await _db.rawQuery('SELECT COUNT(*) FROM passes')) ??
       0;
 
   // ---- Check-ins ----
@@ -120,8 +121,7 @@ class GateDb {
     if (ids.isEmpty) return;
     final batch = _db.batch();
     for (final id in ids) {
-      batch.update('checkins', {'synced': 1},
-          where: 'id = ?', whereArgs: [id]);
+      batch.update('checkins', {'synced': 1}, where: 'id = ?', whereArgs: [id]);
     }
     await batch.commit(noResult: true);
   }
@@ -153,6 +153,13 @@ class GateDb {
           'SELECT COUNT(*) FROM checkins '
           'WHERE device_id = ? AND day = ? AND result = ? AND remote = 0',
           [deviceId, day, CheckinResult.admitted.name])) ??
+      0;
+
+  /// Distinct students admitted on [day] at any gate this phone has heard from.
+  Future<int> admittedAll(int day) async =>
+      Sqflite.firstIntValue(await _db.rawQuery(
+          'SELECT COUNT(DISTINCT pass_id) FROM checkins WHERE day = ? AND result = ?',
+          [day, CheckinResult.admitted.name])) ??
       0;
 
   /// This phone's recent decisions, newest first, with the pass details.

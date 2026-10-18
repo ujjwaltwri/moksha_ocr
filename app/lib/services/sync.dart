@@ -30,6 +30,7 @@ class SyncService extends ChangeNotifier {
   int conflicts = 0;
   int passCount = 0;
   int admittedHere = 0;
+  int admittedAll = 0;
   DateTime? passListUpdatedAt;
 
   // Pass list download progress.
@@ -41,8 +42,8 @@ class SyncService extends ChangeNotifier {
   static const _manifestAtKey = 'manifest_updated_at';
   static const _checkinCursorKey = 'checkin_cursor';
 
-  GateApi get _api => GateApi(
-      baseUrl: _settings.serverUrl, deviceToken: _settings.deviceToken);
+  GateApi get _api =>
+      GateApi(baseUrl: _settings.serverUrl, deviceToken: _settings.deviceToken);
 
   void start() {
     _timer?.cancel();
@@ -68,6 +69,7 @@ class SyncService extends ChangeNotifier {
     pending = await _db.pendingCount();
     conflicts = await _db.conflictCount(day);
     admittedHere = await _db.admittedHere(_settings.deviceId, day);
+    admittedAll = await _db.admittedAll(day);
     final at = await _db.getMeta(_manifestAtKey);
     passListUpdatedAt = at == null ? null : DateTime.parse(at).toLocal();
     notifyListeners();

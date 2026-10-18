@@ -19,13 +19,14 @@ class AppServices {
   /// Why scanning is unavailable, or null when the key is fine.
   String? keyError;
 
-  static Future<AppServices> init() async {
+  /// [dbPath] is for tests.
+  static Future<AppServices> init({String? dbPath}) async {
     final settings = await Settings.load();
     final db = GateDb();
-    await db.open();
+    await db.open(path: dbPath);
     final sync = SyncService(db, settings);
-    final app = AppServices._(
-        settings, db, sync, GateService(db, settings, sync));
+    final app =
+        AppServices._(settings, db, sync, GateService(db, settings, sync));
     app.loadKey();
     return app;
   }

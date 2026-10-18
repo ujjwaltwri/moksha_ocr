@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../config.dart';
 import '../models.dart';
 import '../services/app_services.dart';
 import '../theme.dart';
@@ -64,7 +63,6 @@ class _ResultScreenState extends State<ResultScreen> {
   Widget build(BuildContext context) {
     final o = widget.outcome;
     final app = Services.of(context);
-    final day = AppConfig.dayInfo(app.settings.day);
     final green = o.canAdmit;
     final bg = green ? GateColors.go : GateColors.stop;
 
@@ -93,7 +91,7 @@ class _ResultScreenState extends State<ResultScreen> {
               const SizedBox(height: 16),
               Expanded(
                 child: green
-                    ? _GreenBody(pass: o.pass!, day: day)
+                    ? _GreenBody(pass: o.pass!)
                     : _RedBody(outcome: o, myDeviceId: app.settings.deviceId),
               ),
               const SizedBox(height: 12),
@@ -104,6 +102,7 @@ class _ResultScreenState extends State<ResultScreen> {
                       onPressed: _deciding ? null : _deny,
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.white,
+                        backgroundColor: Colors.transparent,
                         side: const BorderSide(color: Colors.white, width: 2),
                         minimumSize: const Size.fromHeight(72),
                         textStyle: const TextStyle(
@@ -149,15 +148,15 @@ class _ResultScreenState extends State<ResultScreen> {
 }
 
 class _GreenBody extends StatelessWidget {
-  const _GreenBody({required this.pass, required this.day});
+  const _GreenBody({required this.pass});
   final PassRecord pass;
-  final FestDay day;
 
   @override
   Widget build(BuildContext context) {
     return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Expanded(child: _Photo(pass: pass)),
+        Flexible(child: _Photo(pass: pass)),
         const SizedBox(height: 16),
         Text(pass.name,
             textAlign: TextAlign.center,
@@ -183,14 +182,21 @@ class _GreenBody extends StatelessWidget {
                   fontFeatures: [FontFeature.tabularFigures()])),
         ],
         const SizedBox(height: 14),
-        const Text('Compare the face and check the physical ID card.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white, fontSize: 15)),
-        const SizedBox(height: 10),
-        WristbandChip(
-            label: 'Fit ${day.wristband.toUpperCase()} wristband',
-            color: day.color,
-            large: true),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.badge_outlined, color: Colors.white),
+            SizedBox(width: 8),
+            Flexible(
+              child: Text('Compare the face and check the physical ID card.',
+                  style: TextStyle(color: Colors.white, fontSize: 15)),
+            ),
+          ]),
+        ),
       ],
     );
   }
@@ -265,7 +271,8 @@ class _RedBody extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SizedBox(width: 120, child: _Photo(pass: pass, small: true)),
+                SizedBox.square(
+                    dimension: 120, child: _Photo(pass: pass, small: true)),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
@@ -310,6 +317,9 @@ class _Photo extends StatelessWidget {
     final radius = BorderRadius.circular(small ? 12 : 20);
     final thumb = pass.thumb;
     return Center(
+      // Hug the photo instead of filling the height, so the name sits right
+      // under it.
+      heightFactor: 1,
       child: AspectRatio(
         aspectRatio: 1,
         child: Container(
