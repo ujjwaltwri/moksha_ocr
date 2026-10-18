@@ -162,7 +162,10 @@ class _SetupScreenState extends State<SetupScreen> {
               ),
               const SizedBox(height: 14),
               DropdownButtonFormField<int>(
-                value: _day,
+                // initialValue is read once; the key rebuilds the field when
+                // a scanned setup code changes the day.
+                key: ValueKey(_day),
+                initialValue: _day,
                 decoration: const InputDecoration(labelText: 'Fest day'),
                 items: [
                   for (final d in AppConfig.festDays)
