@@ -1,4 +1,4 @@
-package com.moksha.moksha_gate
+package com.mokshagate.app
 
 import io.flutter.embedding.android.FlutterActivity
 

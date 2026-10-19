@@ -56,8 +56,8 @@ class SettingsScreen extends StatelessWidget {
             _InfoRow('Device ID', app.settings.deviceId),
             const SizedBox(height: 10),
             OutlinedButton.icon(
-              icon: const Icon(Icons.edit_outlined),
-              label: const Text('Change connection or gate name'),
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('Scan a new setup code'),
               onPressed: () => Navigator.of(context)
                   .push(MaterialPageRoute(builder: (_) => const SetupScreen())),
             ),

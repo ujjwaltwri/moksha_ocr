@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -70,6 +71,30 @@ void main() {
   testWidgets('setup screen renders', (t) async {
     await _show(t, await _app(t), const SetupScreen(firstRun: true));
     expect(find.text('Scan setup code'), findsOneWidget);
+    // Camera only: there is nothing to type.
+    expect(find.byType(TextField), findsNothing);
+  });
+
+  test('setup code checks', () {
+    String code(Map<String, Object?> m) =>
+        jsonEncode({'t': 'moksha-gate-setup', ...m});
+    const ok = {'url': 'https://gate.test', 'token': 'tok', 'gate': 'Gate 2'};
+
+    final c = parseSetupCode(code({...ok, 'day': 2}), allowHttp: false)!;
+    expect((c.url, c.token, c.gate, c.day),
+        ('https://gate.test', 'tok', 'Gate 2', 2));
+    expect(
+        parseSetupCode(code({...ok, 'day': 9}), allowHttp: false)!.day, isNull);
+    expect(parseSetupCode('hello', allowHttp: false), isNull);
+    expect(parseSetupCode(jsonEncode({...ok, 't': 'other'}), allowHttp: false),
+        isNull);
+    expect(
+        parseSetupCode(code({...ok, 'token': ''}), allowHttp: false), isNull);
+    expect(
+        parseSetupCode(code({...ok, 'gate': null}), allowHttp: false), isNull);
+    final http = code({...ok, 'url': 'http://10.0.0.5:8787'});
+    expect(parseSetupCode(http, allowHttp: false), isNull);
+    expect(parseSetupCode(http, allowHttp: true), isNotNull);
   });
 
   testWidgets('a valid pass shows the student and ADMIT', (t) async {
