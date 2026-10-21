@@ -141,7 +141,7 @@ You need:
 
 Steps:
 
-1. **Create the app record.** In App Store Connect, create the app with the bundle ID from Xcode (`com.moksha.mokshaGate`).
+1. **Create the app record.** In App Store Connect, create the app with the bundle ID `com.mokshagate.app` (the same ID as the Android package).
 2. **Set up signing.** Open `ios/Runner.xcworkspace` in Xcode. Under **Signing & Capabilities**, pick your team.
 3. **Patch the Podfile.** Run `flutter build ios --config-only`, then run `dart run tool/patch_platforms.dart` again. This sets the iOS minimum to 15.5.
 4. **Build:** `flutter build ipa --release --dart-define=...`
