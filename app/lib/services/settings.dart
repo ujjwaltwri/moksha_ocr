@@ -21,7 +21,14 @@ class Settings extends ChangeNotifier {
         aOptions: AndroidOptions(encryptedSharedPreferences: true),
       ),
     );
-    s._token = await s._secure.read(key: 'device_token') ?? '';
+    try {
+      s._token = await s._secure.read(key: 'device_token') ?? '';
+    } catch (_) {
+      // The Keystore key behind the encrypted store can be lost (backup
+      // restore, some OEM phones). Start clean; the phone just needs the
+      // setup code scanned again.
+      await s._secure.deleteAll().catchError((_) {});
+    }
     if (s._prefs.getString('device_id') == null) {
       await s._prefs.setString('device_id', const Uuid().v4());
     }

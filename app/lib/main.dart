@@ -9,8 +9,47 @@ import 'theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  final services = await AppServices.init();
+  final AppServices services;
+  try {
+    services = await AppServices.init();
+  } catch (e) {
+    // Without this the phone sits on the launch screen and looks frozen.
+    runApp(_StartupError(e));
+    return;
+  }
   runApp(Services(services: services, child: const GateApp()));
+}
+
+class _StartupError extends StatelessWidget {
+  const _StartupError(this.error);
+  final Object error;
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: buildTheme(),
+        home: Scaffold(
+          body: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('The app could not start',
+                      style: Theme.of(context).textTheme.headlineMedium),
+                  const SizedBox(height: 12),
+                  const Text('Close it and open it again. If this keeps '
+                      'happening, clear the app\'s storage in phone settings '
+                      'and scan the setup code again.'),
+                  const SizedBox(height: 16),
+                  SelectableText('$error',
+                      style: const TextStyle(fontSize: 13)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 class GateApp extends StatefulWidget {
