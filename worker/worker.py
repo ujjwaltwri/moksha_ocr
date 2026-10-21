@@ -234,7 +234,7 @@ async def send_pass_email(ctx, registration_id: str) -> str:
 
 
 async def startup(ctx):
-    ctx["db"] = await asyncpg.create_pool(_dsn(), min_size=1, max_size=5)
+    ctx["db"] = await asyncpg.create_pool(_dsn(), min_size=1, max_size=int(os.environ.get("WORKER_DB_POOL", "4")))
     ctx["s3"] = _s3()
     ctx["bucket"] = os.environ.get("S3_BUCKET", "moksha-ids")
     key = os.environ.get("PASS_SIGNING_KEY")

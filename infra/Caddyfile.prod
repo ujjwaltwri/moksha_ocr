@@ -1,0 +1,10 @@
+# HTTPS for the API. Caddy requests and renews the certificate automatically once
+# the domain's DNS A record points at this server and ports 80 and 443 are open.
+{$API_DOMAIN} {
+	encode gzip
+	# Photos upload straight to S3, so requests here are small.
+	request_body {
+		max_size 2MB
+	}
+	reverse_proxy api:8000
+}
