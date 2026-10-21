@@ -37,24 +37,25 @@ This is an entry system for **Moksha**, NSUT's intercollege fest: about 20k–30
 |---|---|---|
 | `day1-registration` (default) | FastAPI app, schema, registration/status/upload endpoints, `/form-config`, pass signing, scripts, Docker Compose, reference HTML pages, OpenAPI spec | Pushed (55a744a); 15 tests pass |
 | `day2-ocr` | OCR worker: imaging, RapidOCR, matching, decision rules, duplicate-card check | Pushed (b562c45); 26 tests pass |
-| gate app | Flutter app (this hand-off) | **Not yet in the repo.** Put it in `gate_app/` (see below) |
+| `main` | `day2-ocr` + the Flutter gate app in `app/` | Pushed (88ccda9) |
+| `day3-passes-gate` | From `main`: review endpoints + `/review` page, pass issuance + QR email, gate endpoints, device/staff tokens, `/admin` page | 32 API + 31 worker tests pass; full chain and 25k load tested |
 
 **Repository layout:**
 ```
 api/            FastAPI app
-  app/          config, db, models, schemas, services, routers/, signing.py, consent.py, migrate.py
+  app/          config, db, models, schemas, services, auth, routers/ (registrations, review, gate, admin), static/ (review + admin pages)
   migrations/   plain SQL, applied in order by `python -m app.migrate`
   tests/        pytest against a real Postgres
-worker/         Arq worker: OCR pipeline, decision rules
+worker/         Arq worker: OCR pipeline, decision rules, pass issuance and email
   templates/    one YAML per college (see _example.yaml)
 infra/          docker-compose.yml (Postgres, Redis, MinIO, API), Caddyfile
 scripts/        gen_keys.py, seed_colleges.py, enqueue_pending.py
 examples/       register.html, status.html: reference pages for the website team
 docs/           openapi.json
-gate_app/       Flutter gate scanner (to add)
+app/            Flutter gate scanner (see app/README.md)
 ```
 
-**Adding the gate app:** keep it in this monorepo as `gate_app/`, on a branch made from `day2-ocr`, for example `day3-gate-app`. Don't push it as an unrelated `main` branch. If that already happened, move the files into `gate_app/` on a proper branch and delete the stray one.
+**Gate app location:** it lives in `app/` on `main` (built on top of `day2-ocr`). Leave it there; the build scripts and README refer to that path.
 
 ## Backend (api/ + worker/)
 
@@ -161,9 +162,9 @@ POST /gate/checkins
 | 1 | Registration API | Done |
 | 1 | Registration form + status page | Website team (they need our domain/CORS, status URL pattern and Turnstile keys) |
 | 2 | OCR worker | Done |
-| 2 | Review endpoints `/review/claim` (`SELECT … FOR UPDATE SKIP LOCKED`) and `/review/{id}/decision`, plus the review dashboard (Google sign-in allowlist; keys A/R/U/J) | **Next to build** |
-| 3 | Pass creation on approval, QR email queue with retries and bounce handling, `email_sent_at`; admin stats + help-desk search/resend | To do |
-| 3–4 | `/gate/manifest`, `/gate/checkins`, device tokens, setup QR on the admin page; load test at 5× peak | To do (contract above) |
+| 2 | Review endpoints + `/review` page (keys A/R/U/J). Staff sign in with per-person token links from `/admin`, not Google sign-in | Done (`day3-passes-gate`) |
+| 3 | Pass creation on approval, QR email over SMTP with retries, `email_sent_at`; admin stats + help-desk search/resend/approve/revoke | Done. No provider bounce webhooks: refused addresses and failures show on `/admin` |
+| 3–4 | `/gate/manifest`, `/gate/checkins`, device tokens, setup QR on `/admin`; load tested at 25k passes and 8 lanes | Done |
 | 3–4 | Gate app: first compile, phone tests, TestFlight/APK | Code written; needs build + testing |
 | 5 | Dry run at the real gate with phones and test passes, including an offline test; registration closes; final manifest download | To do |
 | 6 | Fest | |

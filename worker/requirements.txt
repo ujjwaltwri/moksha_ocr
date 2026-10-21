@@ -9,3 +9,5 @@ imagehash>=4.3
 pillow>=10
 pillow-heif>=0.18
 numpy>=1.26
+qrcode[pil]>=7.4
+cryptography>=43

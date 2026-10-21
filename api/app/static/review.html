@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moksha Review</title>
+<style>
+  :root { --bg:#f6f4ef; --card:#fff; --ink:#1b1d21; --muted:#6b6f76; --line:#e3dfd6; --ok:#0e7a3a; --bad:#b3261e; --warn:#a15c00; --acc:#1f4fa8; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; gap:12px; align-items:center; padding:10px 16px; background:var(--card); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0 8px 0 0; }
+  header .grow { flex:1; }
+  select, input, button { font:inherit; }
+  main { display:grid; grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr); gap:16px; padding:16px; max-width:1400px; margin:auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .card-img { width:100%; max-height:70vh; object-fit:contain; background:#222; border-radius:8px; cursor:zoom-in; }
+  .face { width:150px; height:150px; object-fit:cover; border-radius:8px; border:1px solid var(--line); background:#eee; }
+  table { width:100%; border-collapse:collapse; }
+  td, th { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; width:28%; }
+  .chip { display:inline-block; padding:2px 8px; border-radius:999px; background:#fff3d6; color:var(--warn); margin:2px 4px 2px 0; font-size:13px; }
+  .match { color:var(--ok); } .nomatch { color:var(--bad); }
+  .actions { display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; margin-top:12px; }
+  .actions button { padding:12px 6px; border-radius:10px; border:1px solid var(--line); background:#fff; cursor:pointer; font-weight:600; }
+  .actions .a { background:var(--ok); color:#fff; border-color:var(--ok); }
+  .actions .r { background:var(--bad); color:#fff; border-color:var(--bad); }
+  kbd { font:12px ui-monospace, monospace; background:rgba(0,0,0,.08); padding:1px 5px; border-radius:4px; margin-left:4px; }
+  .muted { color:var(--muted); }
+  .rejects { display:none; margin-top:8px; }
+  .rejects button { display:block; width:100%; text-align:left; margin:4px 0; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:#fff; cursor:pointer; }
+  .related { display:flex; gap:10px; overflow-x:auto; }
+  .related div { min-width:170px; font-size:13px; }
+  .related img { width:170px; height:110px; object-fit:cover; border-radius:6px; }
+  #msg { padding:10px 16px; display:none; }
+  #msg.err { display:block; background:#fde7e5; color:var(--bad); }
+  #msg.ok { display:block; background:#e6f4ea; color:var(--ok); }
+  .empty { text-align:center; padding:60px 20px; }
+  details summary { cursor:pointer; color:var(--muted); }
+  pre { white-space:pre-wrap; font-size:12px; background:#f3f1ec; padding:8px; border-radius:6px; max-height:220px; overflow:auto; }
+  #login { max-width:420px; margin:80px auto; }
+  #login input { width:100%; padding:10px; margin:8px 0; }
+</style>
+</head>
+<body>
+<div id="login" class="panel" hidden>
+  <h2>Moksha review</h2>
+  <p class="muted">Paste the reviewer token you were given, or open the link it came with.</p>
+  <input id="tokenIn" placeholder="rev_..." autocomplete="off">
+  <button id="tokenBtn">Start reviewing</button>
+</div>
+
+<div id="app" hidden>
+<header>
+  <h1>Moksha review</h1>
+  <span id="queue" class="muted"></span>
+  <span class="grow"></span>
+  <label class="muted">Only <select id="filter"><option value="">all reasons</option></select></label>
+  <span id="me" class="muted"></span>
+  <button id="logout">Sign out</button>
+</header>
+<div id="msg"></div>
+<main id="main"></main>
+</div>
+
+<script>
+const API = location.origin;
+const $ = (s) => document.querySelector(s);
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+                set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+                del(k) { try { localStorage.removeItem(k); } catch {} } };
+let token = null, current = null, rejectReasons = [], busy = false;
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+function flash(text, kind = "ok") { const m = $("#msg"); m.textContent = text; m.className = kind; clearTimeout(flash.t); flash.t = setTimeout(() => { m.className = ""; }, 4000); }
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, { ...opts, headers: { "Content-Type": "application/json", Authorization: "Bearer " + token, ...(opts.headers || {}) } });
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 401) { store.del("moksha_review_token"); location.hash = ""; location.reload(); }
+  if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : "Request failed (" + res.status + ")");
+  return body;
+}
+
+async function start() {
+  const fromHash = new URLSearchParams(location.hash.slice(1)).get("token");
+  if (fromHash) { store.set("moksha_review_token", fromHash); history.replaceState(null, "", location.pathname); }
+  token = fromHash || store.get("moksha_review_token");
+  if (!token) { $("#login").hidden = false; return; }
+  $("#app").hidden = false;
+  await refreshSummary();
+  await next();
+}
+
+async function refreshSummary() {
+  const s = await api("/review/summary");
+  rejectReasons = s.reject_reasons;
+  $("#queue").textContent = `${s.in_queue} in queue · ${s.waiting_for_ocr} still being read`;
+  $("#me").textContent = s.you.name;
+  const f = $("#filter"), keep = f.value;
+  f.innerHTML = '<option value="">all reasons</option>' + s.by_reason.map((r) => `<option value="${esc(r.reason)}">${esc(r.reason)} (${r.count})</option>`).join("");
+  f.value = keep;
+}
+
+async function next() {
+  busy = true;
+  try {
+    const r = await api("/review/claim", { method: "POST", body: JSON.stringify({ reason: $("#filter").value || null }) });
+    current = r.case;
+    render();
+  } catch (e) { flash(e.message, "err"); }
+  busy = false;
+}
+
+function render() {
+  const main = $("#main");
+  if (!current) {
+    main.innerHTML = `<div class="panel empty" style="grid-column:1/-1"><h2>Queue is empty</h2><p class="muted">Nice work. New cases appear as the OCR finishes.</p><button onclick="next()">Check again</button></div>`;
+    return;
+  }
+  const c = current, o = c.ocr || {};
+  const nameOk = (o.name?.score ?? 0) >= 85, rollOk = o.roll?.match === "exact" || o.roll?.match === "close";
+  main.innerHTML = `
+  <section class="panel">
+    <img class="card-img" src="${esc(c.card_url)}" alt="ID card" onclick="window.open(this.src)">
+    ${c.related.length ? `<h3>Possibly the same person or card</h3><div class="related">${c.related.map((r) => `
+      <div><img src="${esc(r.card_url)}" onclick="window.open(this.src)"><br><b>${esc(r.name)}</b><br>${esc(r.roll_no)} · ${esc(r.status)}<br><span class="muted">${esc(r.email)}</span></div>`).join("")}</div>` : ""}
+  </section>
+  <section class="panel">
+    <div style="display:flex;gap:14px;align-items:flex-start">
+      ${c.face_url ? `<img class="face" src="${esc(c.face_url)}" alt="Face from card">` : `<div class="face" style="display:grid;place-items:center" class="muted">No face found</div>`}
+      <div>${c.reasons.map((r) => `<span class="chip" title="${esc(r.label)}">${esc(r.code)}</span>`).join("")}
+        <p class="muted" style="margin:6px 0 0">Registered ${new Date(c.created_at).toLocaleString()}</p></div>
+    </div>
+    <table style="margin-top:10px">
+      <tr><th>Name</th><td><input id="fixName" value="${esc(c.name)}" style="width:100%"><br>
+        <small class="${nameOk ? "match" : "nomatch"}">Card: ${esc(o.name?.seen || "not found")} (${o.name?.score ?? "–"})</small></td></tr>
+      <tr><th>Roll no.</th><td><input id="fixRoll" value="${esc(c.roll_no)}" style="width:100%"><br>
+        <small class="${rollOk ? "match" : "nomatch"}">Card: ${esc(o.roll?.seen || "not found")} ${o.roll?.format_ok === false ? "· doesn't fit college format" : ""}</small></td></tr>
+      <tr><th>College</th><td>${esc(c.college)}<br><small class="${o.college?.id ? "match" : "nomatch"}">${o.college?.id ? "name found on card" : "college name not found on card"}</small></td></tr>
+      <tr><th>Valid until</th><td>${esc(o.valid_until?.date || "not found")} <small class="muted">${esc(o.valid_until?.source || "")}</small></td></tr>
+      <tr><th>Email</th><td>${esc(c.email)} ${c.college_email ? '<span class="match">· college email</span>' : '<span class="muted">· personal</span>'}</td></tr>
+      <tr><th>Course</th><td>${esc(c.course || "")}</td></tr>
+    </table>
+    <div class="actions">
+      <button class="a" onclick="decide('approve')">Approve<kbd>A</kbd></button>
+      <button class="r" onclick="toggleReject()">Reject<kbd>R</kbd></button>
+      <button onclick="decide('reupload')">New photo<kbd>U</kbd></button>
+      <button onclick="skip()">Skip<kbd>J</kbd></button>
+    </div>
+    <div class="rejects" id="rejects">${rejectReasons.map((r, i) => `<button onclick="decide('reject','${r.code}')"><kbd>${i + 1}</kbd> ${esc(r.label)}</button>`).join("")}</div>
+    <details style="margin-top:12px"><summary>All text read from the card</summary><pre>${esc((o.lines || []).map((l) => l.text).join("\n"))}</pre></details>
+  </section>`;
+}
+
+function toggleReject() { const r = $("#rejects"); if (r) r.style.display = r.style.display === "block" ? "none" : "block"; }
+
+async function decide(decision, reason = null) {
+  if (!current || busy) return;
+  busy = true;
+  const body = { decision, reason };
+  const n = $("#fixName")?.value.trim(), r = $("#fixRoll")?.value.trim();
+  if (n && n !== current.name) body.name = n;
+  if (r && r !== current.roll_no) body.roll_no = r;
+  try {
+    await api(`/review/${current.id}/decision`, { method: "POST", body: JSON.stringify(body) });
+    flash({ approve: "Approved: pass will be emailed", reject: "Rejected", reupload: "Asked for a new photo" }[decision]);
+    busy = false;
+    await next();
+    refreshSummary().catch(() => {});
+  } catch (e) { busy = false; flash(e.message, "err"); }
+}
+
+async function skip() {
+  if (!current || busy) return;
+  const id = current.id;
+  await api(`/review/${id}/release`, { method: "POST" }).catch(() => {});
+  await next();
+  if (current && current.id === id) flash("Only this case is left in the queue.");
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.ctrlKey || e.metaKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "a") decide("approve");
+  else if (k === "r") toggleReject();
+  else if (k === "u") decide("reupload");
+  else if (k === "j") skip();
+  else if (/^[1-9]$/.test(k) && $("#rejects")?.style.display === "block") {
+    const r = rejectReasons[Number(k) - 1]; if (r) decide("reject", r.code);
+  }
+});
+$("#filter").onchange = next;
+$("#logout").onclick = () => { store.del("moksha_review_token"); location.reload(); };
+$("#tokenBtn").onclick = () => { const t = $("#tokenIn").value.trim(); if (t) { store.set("moksha_review_token", t); location.reload(); } };
+start().catch((e) => flash(e.message, "err"));
+</script>
+</body>
+</html>

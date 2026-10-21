@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     # Where the student's status page lives on the website. {token} is replaced.
     status_url_template: str = "http://localhost:3000/status/{token}"
 
+    # Staff and gates
+    admin_token: str | None = None              # bootstrap admin; creates reviewer, admin and device tokens
+    api_public_url: str = "http://localhost:8000"  # what gate phones connect to (goes in the setup QR)
+    event_id: str = "moksha26"                  # must match the gate app's EVENT_ID
+    pass_public_key: str | None = None          # from scripts/gen_keys.py; included in the setup QR
+    review_claim_minutes: int = 10              # a claimed case returns to the queue after this
+
 
 @lru_cache
 def get_settings() -> Settings:

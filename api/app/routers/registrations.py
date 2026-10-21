@@ -3,7 +3,7 @@ import secrets
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +29,7 @@ from ..services import Captcha, JobQueue, RateLimiter, Storage, get_captcha, get
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-REUPLOAD_REASONS = {"poor_image", "no_face"}
+REUPLOAD_REASONS = {"poor_image", "no_face", "reupload_requested"}
 
 
 def client_ip(request: Request) -> str | None:
@@ -215,14 +215,21 @@ async def get_status(token: str, session: AsyncSession = Depends(get_session)):
     if reg is None:
         raise HTTPException(404, "We couldn't find that registration.")
     college = await session.get(College, reg.college_id) if reg.college_id else None
+    qr = None
+    if reg.status == RegStatus.approved:
+        qr = await session.scalar(text(
+            "select token from passes where registration_id = :id and not revoked"), {"id": reg.id})
+    message = STATUS_TEXT[reg.status.value]
+    if reg.status == RegStatus.approved and qr is None:
+        message = "Approved! We're preparing your entry pass. It will appear here and in your email shortly."
     return StatusOut(
         name=reg.name,
         college=college.name if college else (reg.college_other or ""),
         status=reg.status.value,
-        message=STATUS_TEXT[reg.status.value],
+        message=message,
         reasons=[REASON_TEXT.get(r, r) for r in reg.reasons],
         can_reupload=can_reupload(reg),
-        qr_token=None,  # filled in once passes ship (day 3)
+        qr_token=qr,
     )
 
 

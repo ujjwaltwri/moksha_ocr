@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moksha Admin</title>
+<style>
+  :root { --bg:#f6f4ef; --card:#fff; --ink:#1b1d21; --muted:#6b6f76; --line:#e3dfd6; --ok:#0e7a3a; --bad:#b3261e; --warn:#a15c00; --acc:#1f4fa8; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; gap:6px; align-items:center; padding:10px 16px; background:var(--card); border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0 14px 0 0; }
+  nav button { border:0; background:none; padding:8px 12px; border-radius:8px; cursor:pointer; font:inherit; }
+  nav button.on { background:#ece8df; font-weight:600; }
+  .grow { flex:1; }
+  main { padding:16px; max-width:1200px; margin:auto; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:10px; }
+  .tile { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .tile b { display:block; font-size:26px; }
+  .tile span { color:var(--muted); font-size:13px; }
+  table { width:100%; border-collapse:collapse; }
+  td, th { text-align:left; padding:7px 6px; border-bottom:1px solid var(--line); vertical-align:top; font-size:14px; }
+  th { color:var(--muted); font-weight:500; }
+  input, select, button { font:inherit; }
+  input, select { padding:8px; border:1px solid var(--line); border-radius:8px; }
+  .btn { padding:7px 12px; border-radius:8px; border:1px solid var(--line); background:#fff; cursor:pointer; margin:2px; }
+  .btn.p { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .btn.d { color:var(--bad); }
+  .s-approved { color:var(--ok); font-weight:600; } .s-rejected { color:var(--bad); font-weight:600; } .s-review { color:var(--warn); font-weight:600; }
+  .face { width:72px; height:72px; object-fit:cover; border-radius:8px; background:#eee; }
+  .muted { color:var(--muted); }
+  #msg { padding:10px 16px; display:none; }
+  #msg.err { display:block; background:#fde7e5; color:var(--bad); }
+  #msg.ok { display:block; background:#e6f4ea; color:var(--ok); }
+  .qr { text-align:center; } .qr img { width:300px; max-width:100%; }
+  code { background:#f3f1ec; padding:2px 6px; border-radius:6px; word-break:break-all; }
+  #login { max-width:420px; margin:80px auto; }
+  #login input { width:100%; margin:8px 0; }
+  @media print { header, #msg, .noprint { display:none !important; } .panel { border:0; } }
+</style>
+</head>
+<body>
+<div id="login" class="panel" hidden>
+  <h2>Moksha admin</h2>
+  <p class="muted">Paste your admin token.</p>
+  <input id="tokenIn" placeholder="adm_... or the ADMIN_TOKEN" autocomplete="off">
+  <button class="btn p" id="tokenBtn">Sign in</button>
+</div>
+<div id="app" hidden>
+<header>
+  <h1>Moksha admin</h1>
+  <nav>
+    <button data-tab="overview" class="on">Overview</button>
+    <button data-tab="desk">Help desk</button>
+    <button data-tab="gates">Gate phones</button>
+    <button data-tab="staff">Reviewers & admins</button>
+  </nav>
+  <span class="grow"></span>
+  <a href="/review" class="btn">Review queue</a>
+  <button class="btn" id="logout">Sign out</button>
+</header>
+<div id="msg"></div>
+<main>
+  <section id="overview"></section>
+  <section id="desk" hidden>
+    <div class="panel">
+      <input id="q" placeholder="Name, roll number, email, phone or pass ID" style="width:min(520px,100%)">
+      <button class="btn p" id="searchBtn">Search</button>
+    </div>
+    <div id="results"></div>
+  </section>
+  <section id="gates" hidden>
+    <div class="panel noprint">
+      <b>Set up a gate phone</b>
+      <p class="muted">One code per phone. Open the app, choose "Scan setup code" and scan it.</p>
+      <input id="gateName" placeholder="Gate name, e.g. Main gate lane 3">
+      <label>Day <input id="gateDay" type="number" min="1" max="10" value="1" style="width:70px"></label>
+      <button class="btn p" id="gateBtn">Create setup code</button>
+    </div>
+    <div id="gateQr"></div>
+    <div id="gateList" class="panel noprint"></div>
+  </section>
+  <section id="staff" hidden>
+    <div class="panel">
+      <b>Add a reviewer or admin</b>
+      <p class="muted">They get a private link. Anyone with the link can review, so send it to them directly.</p>
+      <input id="staffName" placeholder="Name">
+      <select id="staffRole"><option value="reviewer">Reviewer</option><option value="admin">Admin</option></select>
+      <button class="btn p" id="staffBtn">Create link</button>
+      <div id="staffNew"></div>
+    </div>
+    <div id="staffList" class="panel"></div>
+  </section>
+</main>
+</div>
+
+<script>
+const API = location.origin;
+const $ = (s) => document.querySelector(s);
+const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+                set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+                del(k) { try { localStorage.removeItem(k); } catch {} } };
+let token = null;
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
+function flash(text, kind = "ok") { const m = $("#msg"); m.textContent = text; m.className = kind; clearTimeout(flash.t); flash.t = setTimeout(() => { m.className = ""; }, 5000); }
+function when(s) { return s ? new Date(s).toLocaleString() : "–"; }
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, { ...opts, headers: { "Content-Type": "application/json", Authorization: "Bearer " + token } });
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 401) { store.del("moksha_admin_token"); location.reload(); }
+  if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : "Request failed (" + res.status + ")");
+  return body;
+}
+const run = (fn) => (...a) => fn(...a).catch((e) => flash(e.message, "err"));
+
+// ---------- Overview ----------
+async function overview() {
+  const s = await api("/admin/stats");
+  const r = s.registrations, p = s.passes;
+  const tile = (n, label) => `<div class="tile"><b>${n}</b><span>${label}</span></div>`;
+  const gateRows = s.gate.map((g) => `<tr><td>Day ${g.day}</td><td>${esc(g.result)}</td><td>${g.n}</td><td>${g.conflicts || ""}</td></tr>`).join("");
+  $("#overview").innerHTML = `
+    <div class="panel"><b>Registrations</b><div class="tiles" style="margin-top:8px">
+      ${tile(Object.values(r).reduce((a, b) => a + b, 0), "total")}${tile(r.pending + r.processing, "being read")}
+      ${tile(r.review, "waiting for review")}${tile(r.approved, "approved")}${tile(r.rejected, "rejected")}</div></div>
+    <div class="panel"><b>Passes</b><div class="tiles" style="margin-top:8px">
+      ${tile(p.issued, "issued")}${tile(p.emailed, "emailed")}${tile(p.email_failed, "email failed")}${tile(p.revoked, "revoked")}
+      ${tile(s.approved_without_pass, "approved, no pass yet")}</div>
+      ${s.approved_without_pass ? `<p><button class="btn" onclick="issueMissing()">Issue missing passes</button>
+        <span class="muted">Use this if the worker was down. Passes normally appear within seconds.</span></p>` : ""}</div>
+    <div class="panel"><b>Gates</b> <span class="muted">${s.devices.online} of ${s.devices.active} phones online</span>
+      ${gateRows ? `<table style="margin-top:8px"><tr><th>Day</th><th>Result</th><th>Scans</th><th>Admitted by 2 gates</th></tr>${gateRows}</table>` : `<p class="muted">No scans yet.</p>`}</div>
+    <p class="muted">Refreshes every 15 seconds.</p>`;
+}
+const issueMissing = run(async () => { const r = await api("/admin/passes/issue-missing", { method: "POST" }); flash(`Queued ${r.queued} passes`); overview(); });
+
+// ---------- Help desk ----------
+const search = run(async () => {
+  const q = $("#q").value.trim(); if (q.length < 2) return;
+  const { results } = await api("/admin/search?q=" + encodeURIComponent(q));
+  $("#results").innerHTML = results.length ? results.map((x) => `
+    <div class="panel"><div style="display:flex;gap:14px;flex-wrap:wrap">
+      ${x.face_url ? `<img class="face" src="${esc(x.face_url)}">` : `<div class="face"></div>`}
+      <div style="flex:1;min-width:240px">
+        <b>${esc(x.name)}</b> · <span class="s-${esc(x.status)}">${esc(x.status)}</span><br>
+        ${esc(x.college)} · ${esc(x.roll_no)}<br><span class="muted">${esc(x.email)} ${x.phone ? "· " + esc(x.phone) : ""}</span>
+        ${x.reasons.length ? `<ul>${x.reasons.map((m) => `<li>${esc(m)}</li>`).join("")}</ul>` : ""}
+        ${x.pass ? `<p>Pass ${x.pass.revoked ? '<b class="s-rejected">REVOKED</b>' : "active"} · emailed ${when(x.pass.email_sent_at)}
+           ${x.pass.email_error ? `<br><span class="s-rejected">Email problem: ${esc(x.pass.email_error)}</span>` : ""}</p>` : ""}
+        ${x.checkins.length ? `<p class="muted">Gate: ${x.checkins.map((k) => `Day ${k.day} ${esc(k.result)} at ${esc(k.gate)} ${new Date(k.at).toLocaleTimeString()}${k.conflict ? " (also admitted at another gate)" : ""}`).join("<br>")}</p>` : ""}
+      </div>
+      <div>
+        <a class="btn" href="${esc(x.card_url)}" target="_blank">ID card</a>
+        <a class="btn" href="${esc(x.status_url)}" target="_blank">Status page</a><br>
+        ${x.status !== "approved" ? `<button class="btn p" onclick="approve('${x.id}')">Approve (checked in person)</button>` : ""}
+        ${x.status === "approved" ? `<button class="btn" onclick="resend('${x.id}')">Resend pass</button>` : ""}
+        ${x.pass && !x.pass.revoked ? `<button class="btn d" onclick="revoke('${x.pass.id}')">Revoke pass</button>` : ""}
+        ${x.pass && x.pass.revoked ? `<button class="btn" onclick="unrevoke('${x.pass.id}')">Restore pass</button>` : ""}
+      </div></div></div>`).join("") : `<div class="panel muted">Nothing found.</div>`;
+});
+const approve = run(async (id) => { if (!confirm("Approve after checking the student and their ID card in person?")) return; await api(`/admin/registrations/${id}/approve`, { method: "POST" }); flash("Approved. The pass is being issued and emailed."); search(); });
+const resend = run(async (id) => { const r = await api(`/admin/registrations/${id}/resend`, { method: "POST" }); flash(r.queued === "email" ? "Email queued" : "Pass being issued"); });
+const revoke = run(async (id) => { if (!confirm("Revoke this pass? Gate phones will show it as cancelled.")) return; await api(`/admin/passes/${id}/revoke`, { method: "POST" }); flash("Revoked. Gates pick it up within a minute."); search(); });
+const unrevoke = run(async (id) => { await api(`/admin/passes/${id}/unrevoke`, { method: "POST" }); flash("Restored"); search(); });
+
+// ---------- Gate phones ----------
+async function gates() {
+  const { devices } = await api("/admin/devices");
+  const now = Date.now();
+  $("#gateList").innerHTML = `<b>Phones</b><table style="margin-top:8px"><tr><th>#</th><th>Gate</th><th>Last seen</th><th>Scans synced</th><th></th></tr>${devices.map((d) => {
+    const online = d.last_seen_at && now - new Date(d.last_seen_at) < 120000;
+    return `<tr><td>${d.id}</td><td>${esc(d.gate)}</td><td>${d.revoked ? '<span class="s-rejected">revoked</span>' : online ? '<span class="s-approved">online</span>' : when(d.last_seen_at)}</td><td>${d.checkins}</td>
+      <td>${d.revoked ? "" : `<button class="btn d" onclick="revokeDevice(${d.id})">Revoke</button>`}</td></tr>`; }).join("")}</table>`;
+}
+const createGate = run(async () => {
+  const gate = $("#gateName").value.trim(); if (!gate) return flash("Enter a gate name", "err");
+  const r = await api("/admin/devices", { method: "POST", body: JSON.stringify({ gate, day: Number($("#gateDay").value) || 1 }) });
+  $("#gateQr").innerHTML = `<div class="panel qr"><h2>${esc(r.setup.gate)} · Day ${r.setup.day}</h2><img src="${r.setup_qr}"><p class="muted">${esc(r.note)}</p>
+    <button class="btn noprint" onclick="print()">Print</button></div>`;
+  gates();
+});
+const revokeDevice = run(async (id) => { if (!confirm("Revoke this phone? It stops syncing immediately.")) return; await api(`/admin/devices/${id}`, { method: "DELETE" }); gates(); });
+
+// ---------- Staff ----------
+async function staff() {
+  const { staff } = await api("/admin/staff");
+  $("#staffList").innerHTML = `<b>People</b><table style="margin-top:8px"><tr><th>Name</th><th>Role</th><th>Decisions</th><th></th></tr>${staff.map((s) => `
+    <tr><td>${esc(s.name)}</td><td>${esc(s.role)}</td><td>${s.decisions}</td><td>${s.revoked ? '<span class="muted">revoked</span>' : `<button class="btn d" onclick="revokeStaff(${s.id})">Revoke</button>`}</td></tr>`).join("")}</table>`;
+}
+const createStaff = run(async () => {
+  const name = $("#staffName").value.trim(); if (!name) return flash("Enter a name", "err");
+  const r = await api("/admin/staff", { method: "POST", body: JSON.stringify({ name, role: $("#staffRole").value }) });
+  $("#staffNew").innerHTML = `<p>Send this link to <b>${esc(name)}</b> privately. It's shown only once:</p><p><code>${esc(r.login_url)}</code></p>`;
+  $("#staffName").value = ""; staff();
+});
+const revokeStaff = run(async (id) => { if (!confirm("Revoke this person's access?")) return; await api(`/admin/staff/${id}`, { method: "DELETE" }); staff(); });
+
+// ---------- Shell ----------
+const loaders = { overview, desk: async () => {}, gates, staff };
+document.querySelectorAll("nav button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll("main > section").forEach((s) => s.hidden = s.id !== b.dataset.tab);
+  run(loaders[b.dataset.tab])();
+});
+$("#searchBtn").onclick = search; $("#q").onkeydown = (e) => { if (e.key === "Enter") search(); };
+$("#gateBtn").onclick = createGate; $("#staffBtn").onclick = createStaff;
+$("#logout").onclick = () => { store.del("moksha_admin_token"); location.reload(); };
+$("#tokenBtn").onclick = () => { const t = $("#tokenIn").value.trim(); if (t) { store.set("moksha_admin_token", t); location.reload(); } };
+
+const fromHash = new URLSearchParams(location.hash.slice(1)).get("token");
+if (fromHash) { store.set("moksha_admin_token", fromHash); history.replaceState(null, "", location.pathname); }
+token = fromHash || store.get("moksha_admin_token");
+if (!token) $("#login").hidden = false;
+else { $("#app").hidden = false; run(overview)(); setInterval(() => { if (!$("#overview").hidden) overview().catch(() => {}); }, 15000); }
+</script>
+</body>
+</html>
