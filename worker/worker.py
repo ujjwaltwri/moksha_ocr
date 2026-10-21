@@ -15,9 +15,13 @@ from datetime import date
 
 import asyncpg
 import boto3
+import smtplib
+
+from arq import Retry, func
 from arq.connections import RedisSettings
 from botocore.config import Config
 
+from pipeline import passes
 from pipeline.decide import decide
 from pipeline.run import run
 from pipeline.types import CollegeInfo, RegInfo
@@ -28,6 +32,12 @@ logging.basicConfig(level=logging.INFO)
 FEST_DAY = date.fromisoformat(os.environ.get("FEST_DAY", "2026-10-24"))
 PHASH_MAX_DISTANCE = int(os.environ.get("PHASH_MAX_DISTANCE", "6"))
 MAX_TRIES = 3
+EMAIL_TRIES = 6
+EVENT_ID = os.environ.get("EVENT_ID", "moksha26")
+EVENT_NAME = os.environ.get("EVENT_NAME", "Moksha 2026")
+FEST_DAYS = [int(d) for d in os.environ.get("FEST_DAYS", "1,2,3").split(",") if d.strip()]
+DAYS_LABEL = os.environ.get("FEST_DAYS_LABEL", "all fest days")
+STATUS_URL_TEMPLATE = os.environ.get("STATUS_URL_TEMPLATE", "http://localhost:3000/status/{token}")
 _colleges: tuple[float, list[CollegeInfo]] = (0.0, [])
 
 
@@ -122,6 +132,8 @@ async def process_registration(ctx, registration_id: str) -> str:
                 registration_id, json.dumps({"status": status, "reasons": reasons, "ms": ocr["ms"]}),
             )
         log.info("%s -> %s %s (%d ms)", registration_id, status, reasons, ocr["ms"])
+        if status == "approved":
+            await enqueue(ctx, "issue_pass", registration_id, f"pass:{registration_id}")
         return status
 
     except Exception:
@@ -136,10 +148,99 @@ async def process_registration(ctx, registration_id: str) -> str:
         raise
 
 
+async def enqueue(ctx, function: str, arg: str, job_id: str) -> None:
+    redis = ctx.get("redis")
+    if redis is not None:  # absent in unit tests
+        await redis.enqueue_job(function, arg, _job_id=job_id)
+
+
+# ---------- Passes ----------
+
+async def issue_pass(ctx, registration_id: str) -> str:
+    """Create the pass for an approved registration: signed token + gate thumbnail. Then email it."""
+    pool, s3, bucket = ctx["db"], ctx["s3"], ctx["bucket"]
+    reg = await pool.fetchrow("select status, photo_crop_key from registrations where id = $1", registration_id)
+    if reg is None or reg["status"] != "approved":
+        return "skipped"
+    p = await pool.fetchrow(
+        """insert into passes (registration_id, days) values ($1, $2)
+           on conflict (registration_id) do update set registration_id = excluded.registration_id
+           returning id, token, email_sent_at""", registration_id, FEST_DAYS)
+    if p["token"] is None:
+        thumb = None
+        if reg["photo_crop_key"]:
+            face = await asyncio.to_thread(
+                lambda: s3.get_object(Bucket=bucket, Key=reg["photo_crop_key"])["Body"].read())
+            thumb = passes.gate_thumb(face)
+        token = passes.sign_pass(ctx["signing_key"], str(p["id"]), EVENT_ID, FEST_DAYS)
+        await pool.execute("update passes set token = $2, thumb = $3, days = $4 where id = $1",
+                           p["id"], token, thumb, FEST_DAYS)
+        await pool.execute(
+            "insert into audit_log (actor, action, target) values ('worker', 'pass.issued', $1)", registration_id)
+        log.info("%s -> pass %s issued (thumb %s)", registration_id, p["id"], "yes" if thumb else "none")
+    if p["email_sent_at"] is None:
+        await enqueue(ctx, "send_pass_email", registration_id, f"email:{registration_id}")
+    return str(p["id"])
+
+
+def _smtp_send(msg) -> None:
+    host = os.environ.get("SMTP_HOST")
+    if not host:
+        raise RuntimeError("SMTP_HOST is not set")
+    port = int(os.environ.get("SMTP_PORT", "587"))
+    user, password = os.environ.get("SMTP_USER"), os.environ.get("SMTP_PASSWORD")
+    cls = smtplib.SMTP_SSL if port == 465 else smtplib.SMTP
+    with cls(host, port, timeout=30) as smtp:
+        if port != 465 and os.environ.get("SMTP_STARTTLS", "true").lower() != "false":
+            smtp.starttls()
+        if user:
+            smtp.login(user, password or "")
+        smtp.send_message(msg)
+
+
+async def send_pass_email(ctx, registration_id: str) -> str:
+    pool = ctx["db"]
+    r = await pool.fetchrow("""
+        select r.name, r.email, r.status_token, r.status, coalesce(c.name, r.college_other, '') as college,
+               p.id as pass_id, p.token, p.revoked
+        from registrations r join passes p on p.registration_id = r.id
+        left join colleges c on c.id = r.college_id
+        where r.id = $1""", registration_id)
+    if r is None or r["token"] is None or r["revoked"] or r["status"] != "approved":
+        return "skipped"
+    msg = passes.pass_email(
+        to=r["email"], sender=os.environ.get("SMTP_FROM", "Moksha <passes@example.com>"),
+        reply_to=os.environ.get("SMTP_REPLY_TO") or None,
+        name=r["name"], college=r["college"], token=r["token"], event_name=EVENT_NAME, days_label=DAYS_LABEL,
+        status_url=STATUS_URL_TEMPLATE.format(token=r["status_token"]))
+    try:
+        await asyncio.to_thread(ctx.get("send_mail", _smtp_send), msg)
+    except smtplib.SMTPRecipientsRefused as e:  # bad address: retrying won't help
+        await pool.execute("update passes set email_attempts = email_attempts + 1, email_error = $2 where id = $1",
+                           r["pass_id"], f"address refused: {e}"[:300])
+        return "refused"
+    except Exception as e:
+        await pool.execute("update passes set email_attempts = email_attempts + 1, email_error = $2 where id = $1",
+                           r["pass_id"], f"{type(e).__name__}: {e}"[:300])
+        tries = ctx.get("job_try", 1)
+        if tries < EMAIL_TRIES:
+            raise Retry(defer=min(30 * 2 ** tries, 1800))
+        log.error("giving up emailing %s: %s", registration_id, e)
+        return "failed"
+    await pool.execute(
+        "update passes set email_sent_at = now(), email_attempts = email_attempts + 1, email_error = null where id = $1",
+        r["pass_id"])
+    return "sent"
+
+
 async def startup(ctx):
     ctx["db"] = await asyncpg.create_pool(_dsn(), min_size=1, max_size=5)
     ctx["s3"] = _s3()
     ctx["bucket"] = os.environ.get("S3_BUCKET", "moksha-ids")
+    key = os.environ.get("PASS_SIGNING_KEY")
+    if not key:
+        raise RuntimeError("PASS_SIGNING_KEY is not set (run scripts/gen_keys.py once and put it in .env)")
+    ctx["signing_key"] = passes.load_key(key)
     # Load the OCR model now, not on the first student's card.
     from pipeline import ocr
     import numpy as np
@@ -152,7 +253,7 @@ async def shutdown(ctx):
 
 
 class WorkerSettings:
-    functions = [process_registration]
+    functions = [process_registration, issue_pass, func(send_pass_email, max_tries=EMAIL_TRIES)]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))

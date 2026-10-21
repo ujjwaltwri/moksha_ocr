@@ -11,9 +11,37 @@ Full plan: the "Moksha Entry System — 6-Day Build Spec" doc.
 | 1 | Schema, presigned uploads, `/registrations`, `/status`, re-upload, colleges list | **Done** (this branch) |
 | 1 | Registration form + status page | Website team, using this API. Reference pages in `examples/` |
 | 2 | OCR pipeline in `worker/` and decision rules | **Done** (`day2-ocr`) |
-| 2 | Review endpoints and dashboard | To do |
-| 3 | Pass signing (`api/app/signing.py` is ready), QR email | To do |
-| 4 | Gate PWA, manifest, check-in sync | To do |
+| 2 | Review endpoints and review page (`/review`) | **Done** (`day3-passes-gate`) |
+| 3 | Pass issuance (signed QR + gate thumbnail) and QR email | **Done** (`day3-passes-gate`) |
+| 3–4 | Gate endpoints for the Flutter app, device tokens, admin page (`/admin`) | **Done** (`day3-passes-gate`) |
+| 3–4 | Gate app (`app/`): build, phone tests | Built by Ujjwal; test against the real API |
+| 0 | **Deployment** | **Not done**: see the checklist below |
+
+## Staff pages
+
+- **`/admin`**: sign in with `ADMIN_TOKEN`. Overview (registrations, passes, emails, gates), help desk (search by name, roll, email, phone or pass ID; approve after an in-person check; resend; revoke), gate phones (create a setup QR per phone; revoke), reviewers and admins (create a private login link each).
+- **`/review`**: reviewers open their link. One case at a time with the card, the face crop and what OCR read next to what the student typed. Keys: **A** approve, **R** then **1–5** reject with a reason, **U** ask for a new photo, **J** skip. Name and roll number can be corrected before approving. Two reviewers never get the same case; a claimed case returns to the queue after 10 minutes.
+
+## Passes and email
+
+- Approval (by the worker or a reviewer) queues `issue_pass`: the worker signs the QR token with `PASS_SIGNING_KEY`, makes a 160×160 WebP face thumbnail for the gate, then queues `send_pass_email`.
+- Email goes out over SMTP with the QR inline, retried with backoff for about an hour; failures show on the admin page. **Send volume:** 20k+ emails needs a real provider (Amazon SES, Brevo paid, Mailgun, Postmark). Gmail and free tiers cap at a few hundred a day. Set up SPF, DKIM and DMARC for the sending domain.
+- `GET /status/{token}` returns `qr_token` once the pass exists; the website draws it as a QR (see `examples/status.html`).
+
+## Gate (for the Flutter app in `app/`)
+
+`GET /gate/manifest` and `POST /gate/checkins` implement the contract in `app/lib/services/api.dart` (and `app/tools/mock_server.py`). Each phone uses its own device token from its setup QR. Check-ins are idempotent by the phone's id; a second admission of the same pass on the same day from another phone is returned in `conflicts`. Revoking a pass, or rejecting its registration, reaches phones on their next refresh (every 60 s).
+
+**Measured here:** 25,000 passes download in about 3 s of server time per phone (expect 100–150 MB with real face thumbnails, gzip on; do the first download over Wi-Fi the night before); 8 lanes posting 2,000 admissions at once got every sync answered in under 150 ms.
+
+## Deploy checklist
+
+1. VM (4–8 vCPU) in Mumbai with Docker; managed Postgres; an S3 or GCS bucket (private, with a CORS rule allowing POST from the website's origin).
+2. `python scripts/gen_keys.py` once. `PASS_SIGNING_KEY` into the server `.env`; `PASS_PUBLIC_KEY` into `.env` **and** the gate app build (`--dart-define=PASS_PUBLIC_KEY=...`).
+3. Fill `.env` from `.env.example`: `ADMIN_TOKEN` (long random), `API_PUBLIC_URL` (https), `CORS_ORIGINS`, `STATUS_URL_TEMPLATE`, Turnstile keys, SMTP, `FEST_DAY`, `FEST_DAYS`, `EVENT_ID` (= the app's).
+4. `docker compose -f infra/docker-compose.yml --env-file .env up -d --build` (drop the local postgres and minio services), Caddy in front for HTTPS (`infra/Caddyfile`).
+5. Seed colleges (`scripts/seed_colleges.py`), then `scripts/enqueue_pending.py` if anything registered before the worker ran.
+6. `/admin`: create reviewer links, then one setup QR per gate phone.
 
 ## Layout
 
@@ -22,7 +50,7 @@ api/            FastAPI app
   app/          config, db, models, schemas, services, routers/, signing.py, migrate.py
   migrations/   plain SQL, applied in order by `python -m app.migrate`
   tests/        pytest against a real Postgres
-worker/         Arq worker: reads each ID card and decides approve / review / reject
+worker/         Arq worker: reads each ID card, decides approve / review / reject, issues and emails passes
   pipeline/     imaging (card, face, quality), ocr (RapidOCR), extract (fields + matching), decide (rules)
   templates/    one YAML per college; see _example.yaml
   tests/        unit, real-OCR pipeline tests on synthetic cards, and worker-job tests

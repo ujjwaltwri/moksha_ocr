@@ -16,6 +16,11 @@
 <body>
 <h1>Your Moksha registration</h1>
 <div id="out">Loading…</div>
+<div id="pass" hidden style="text-align:center;margin:1rem 0">
+  <div id="qr" style="display:inline-block;background:#fff;padding:12px;border-radius:12px"></div>
+  <p><strong>Your entry pass.</strong> Show this at the gate with your college ID card.<br>
+  Take a screenshot so it works without internet.</p>
+</div>
 <div id="reupload" hidden>
   <p><strong>Upload a new photo of your ID card</strong></p>
   <input type="file" id="file" accept="image/jpeg,image/png,image/heic,image/heif">
@@ -23,6 +28,7 @@
 </div>
 <p class="error" id="error"></p>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script>
 const q = new URLSearchParams(location.search);
 // Also accepts /status/<token> style URLs.
@@ -48,6 +54,15 @@ async function load() {
     ${s.reasons.length ? `<ul>${s.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}
     `;
   $("#reupload").hidden = !s.can_reupload;
+  // qr_token is the signed pass. Draw it as a QR code; any QR library works.
+  if (s.qr_token && window.qrcode) {
+    const qr = qrcode(0, "M");
+    qr.addData(s.qr_token);
+    qr.make();
+    $("#qr").innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true });
+    $("#qr svg").setAttribute("style", "width:min(300px,80vw);height:auto");
+    $("#pass").hidden = false;
+  }
 }
 
 $("#send").onclick = async () => {

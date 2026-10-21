@@ -138,13 +138,19 @@ REASON_TEXT = {
     "college_not_allowed": "Your college isn't part of this year's Moksha.",
     "card_expired": "Your ID card has expired.",
     "processing_error": "We couldn't read your ID card automatically. A volunteer will check it.",
+    "reupload_requested": "A volunteer couldn't verify your ID card from this photo. Please upload a clearer photo of the front.",
+    # Reviewer rejections
+    "not_student": "This doesn't look like a valid student ID card.",
+    "card_invalid": "Your ID card has expired or isn't valid for this year.",
+    "details_mismatch": "The details on your card don't match what you entered.",
+    "duplicate": "Another registration already uses this ID card.",
 }
 
 STATUS_TEXT = {
     "pending": "Received. We're checking your ID card.",
     "processing": "We're checking your ID card.",
     "review": "A volunteer is reviewing your registration. This usually takes under 24 hours.",
-    "approved": "Approved! Your entry pass will be emailed to you before the fest.",
+    "approved": "Approved! Your entry pass is below and has been emailed to you. Bring your college ID card too.",
     "rejected": "Your registration wasn't approved.",
 }
 

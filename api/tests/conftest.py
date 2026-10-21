@@ -15,6 +15,9 @@ TEST_DB = os.environ.get("TEST_DATABASE_URL")
 if not TEST_DB:
     pytest.skip("TEST_DATABASE_URL not set", allow_module_level=True)
 os.environ["DATABASE_URL"] = TEST_DB
+os.environ["ADMIN_TOKEN"] = "test-admin-token"
+os.environ["API_PUBLIC_URL"] = "https://api.test"
+os.environ["PASS_PUBLIC_KEY"] = "test-public-key"
 
 from app.config import get_settings  # noqa: E402
 from app.main import app  # noqa: E402
@@ -36,13 +39,24 @@ class FakeStorage:
     def object_size(self, key):
         return self.objects.get(key)
 
+    def view_url(self, key, ttl_s=900):
+        return f"https://storage.test/view/{key}"
+
 
 class FakeQueue:
     def __init__(self):
-        self.jobs: list[str] = []
+        self.jobs: list[str] = []      # OCR jobs, by registration id
+        self.calls: list[tuple] = []   # every job: (function, registration id)
 
     async def enqueue_ocr(self, registration_id):
         self.jobs.append(registration_id)
+        self.calls.append(("process_registration", registration_id))
+
+    async def enqueue_pass(self, registration_id):
+        self.calls.append(("issue_pass", registration_id))
+
+    async def enqueue_email(self, registration_id):
+        self.calls.append(("send_pass_email", registration_id))
 
 
 class AllowAll:
@@ -101,6 +115,17 @@ def upload(storage):
         return key
 
     return make
+
+
+ADMIN = {"Authorization": "Bearer test-admin-token"}
+
+
+async def db_exec(sql, *args):
+    conn = await asyncpg.connect(plain_dsn(TEST_DB))
+    try:
+        return await conn.fetch(sql, *args)
+    finally:
+        await conn.close()
 
 
 @pytest.fixture

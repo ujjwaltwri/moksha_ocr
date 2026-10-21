@@ -46,6 +46,11 @@ class Storage:
         )
         return PresignedUpload(url=post["url"], fields=post["fields"], key=key)
 
+    def view_url(self, key: str, ttl_s: int = 900) -> str:
+        """Short-lived link for staff to view a private image."""
+        return self.public.generate_presigned_url(
+            "get_object", Params={"Bucket": self.bucket, "Key": key}, ExpiresIn=ttl_s)
+
     def object_size(self, key: str) -> int | None:
         """Size in bytes, or None if the object doesn't exist."""
         try:
@@ -74,14 +79,24 @@ def get_redis() -> Redis:
 
 
 class JobQueue:
-    """Enqueues OCR jobs for the Arq worker."""
+    """Enqueues jobs for the Arq worker."""
 
-    async def enqueue_ocr(self, registration_id: str) -> None:
+    async def enqueue(self, function: str, *args, job_id: str | None = None) -> None:
         from arq.connections import ArqRedis
 
         arq = ArqRedis(connection_pool=get_redis().connection_pool)
-        # _job_id makes re-enqueueing the same registration a no-op while one is queued.
-        await arq.enqueue_job("process_registration", registration_id, _job_id=f"ocr:{registration_id}")
+        # _job_id makes re-enqueueing the same job a no-op while one is queued.
+        await arq.enqueue_job(function, *args, _job_id=job_id)
+
+    async def enqueue_ocr(self, registration_id: str) -> None:
+        await self.enqueue("process_registration", registration_id, job_id=f"ocr:{registration_id}")
+
+    async def enqueue_pass(self, registration_id: str) -> None:
+        """Create (or re-sign) the pass and email it."""
+        await self.enqueue("issue_pass", registration_id, job_id=f"pass:{registration_id}")
+
+    async def enqueue_email(self, registration_id: str) -> None:
+        await self.enqueue("send_pass_email", registration_id, job_id=f"email:{registration_id}")
 
 
 def get_queue() -> JobQueue:
