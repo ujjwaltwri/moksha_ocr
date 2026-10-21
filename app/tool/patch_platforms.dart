@@ -16,8 +16,10 @@ void main() {
   _androidManifest();
   _androidDebugManifest();
   _androidGradle();
+  _androidProguard();
   _iosInfoPlist();
   _iosPodfile();
+  _iosDeploymentTarget();
   stdout.writeln(changes == 0
       ? 'Nothing to change; platform files are already patched.'
       : 'Done: $changes change(s).');
@@ -52,10 +54,16 @@ void _androidManifest() {
         'android:label="moksha_gate"', 'android:label="Moksha Gate"');
     _did('AndroidManifest: app name "Moksha Gate"');
   }
+  // Android backup would restore the encrypted token store without the
+  // Keystore key that opens it, so a reinstalled app couldn't start.
+  if (!s.contains('android:allowBackup')) {
+    s = s.replaceFirst(
+        '<application', '<application\n        android:allowBackup="false"');
+    _did('AndroidManifest: no backup of the token store');
+  }
   // Lock the scanner to portrait.
   if (!s.contains('android:screenOrientation')) {
-    s = s.replaceFirst(
-        'android:name=".MainActivity"',
+    s = s.replaceFirst('android:name=".MainActivity"',
         'android:name=".MainActivity"\n            android:screenOrientation="portrait"');
     _did('AndroidManifest: portrait only');
   }
@@ -70,7 +78,8 @@ void _androidDebugManifest() {
   var s = f.readAsStringSync();
   if (s.contains('usesCleartextTraffic')) return;
   if (s.contains('<application')) {
-    s = s.replaceFirst('<application', '<application android:usesCleartextTraffic="true"');
+    s = s.replaceFirst(
+        '<application', '<application android:usesCleartextTraffic="true"');
   } else {
     s = s.replaceFirst('</manifest>',
         '    <application android:usesCleartextTraffic="true"/>\n</manifest>');
@@ -80,7 +89,10 @@ void _androidDebugManifest() {
 }
 
 void _androidGradle() {
-  for (final path in ['android/app/build.gradle.kts', 'android/app/build.gradle']) {
+  for (final path in [
+    'android/app/build.gradle.kts',
+    'android/app/build.gradle'
+  ]) {
     final f = File(path);
     if (!f.existsSync()) continue;
     var s = f.readAsStringSync();
@@ -100,6 +112,34 @@ void _androidGradle() {
     return;
   }
   _missing('android/app/build.gradle(.kts)');
+}
+
+// shared_preferences_android 2.5 calls its Kotlin API from Dart over JNI,
+// looking classes and method signatures up by name. R8 sees no Java callers,
+// so it strips or renames them and release builds crash on start.
+// The Flutter Gradle plugin applies android/app/proguard-rules.pro itself.
+void _androidProguard() {
+  final f = File('android/app/proguard-rules.pro');
+  final s = f.existsSync() ? f.readAsStringSync() : '';
+  // Continuation is the marker for the full set; older versions of this
+  // script kept only the plugin classes, and that still crashed.
+  if (s.contains('kotlin.coroutines.Continuation')) return;
+  f.writeAsStringSync(r'''
+# shared_preferences_android 2.5 calls its Kotlin API from Dart over JNI,
+# looking classes and method signatures up by name. R8 sees no Java callers,
+# so it strips or renames them and release builds crash on start. Keep every
+# class those lookups name, including the Kotlin types in the signatures.
+-keep class io.flutter.plugins.sharedpreferences.** { *; }
+-keep class com.github.dart_lang.jni.** { *; }
+-keep class kotlin.coroutines.Continuation { *; }
+-keep class kotlin.coroutines.intrinsics.** { *; }
+-keep class kotlin.Result { *; }
+-keep class kotlin.Result$Failure { *; }
+-keep class kotlin.Unit { *; }
+-keep class kotlin.jvm.internal.DefaultConstructorMarker { *; }
+'''
+      .trimLeft());
+  _did('proguard-rules.pro: keep classes used over JNI');
 }
 
 /// Signs release builds with the upload key from android/key.properties
@@ -135,7 +175,8 @@ if (keystorePropertiesFile.exists()) {
     buildTypes {''';
   final androidBlock = RegExp(r'^android \{', multiLine: true);
   if (!s.contains('    buildTypes {') || !androidBlock.hasMatch(s)) {
-    stdout.writeln('  ! build.gradle.kts layout not recognised; add signing by hand.');
+    stdout.writeln(
+        '  ! build.gradle.kts layout not recognised; add signing by hand.');
     return s;
   }
   s = imports +
@@ -197,6 +238,18 @@ void _iosPodfile() {
   s = re.hasMatch(s) ? s.replaceFirst(re, want) : '$want\n$s';
   f.writeAsStringSync(s);
   _did('Podfile: iOS 15.5 minimum');
+}
+
+// The Runner target must match the Podfile, or Xcode warns that the app
+// claims to run on iOS versions the scanner plugin doesn't support.
+void _iosDeploymentTarget() {
+  final f = File('ios/Runner.xcodeproj/project.pbxproj');
+  if (!f.existsSync()) return _missing(f.path);
+  final s = f.readAsStringSync();
+  final re = RegExp(r'IPHONEOS_DEPLOYMENT_TARGET = (?!15\.5;)[\d.]+;');
+  if (!re.hasMatch(s)) return;
+  f.writeAsStringSync(s.replaceAll(re, 'IPHONEOS_DEPLOYMENT_TARGET = 15.5;'));
+  _did('Xcode project: iOS 15.5 minimum');
 }
 
 void _did(String what) {
