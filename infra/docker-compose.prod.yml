@@ -1,0 +1,63 @@
+# Production on one VM. Postgres is managed (DigitalOcean); files live in S3; email via SES.
+#
+#   docker compose -f infra/docker-compose.prod.yml up -d --build
+#   docker compose -f infra/docker-compose.prod.yml logs -f api worker
+#   docker compose -f infra/docker-compose.prod.yml run --rm tools python /scripts/seed_colleges.py
+#
+# Needs ../.env (see .env.example) with API_DOMAIN set; Caddy gets the HTTPS certificate itself.
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    env_file: ../.env          # Caddy reads API_DOMAIN from it
+    volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api]
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]   # queued jobs survive a restart
+    volumes: [redisdata:/data]
+
+  api:
+    build: ../api
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on: [redis]
+    expose: ["8000"]
+
+  # Each replica runs WORKER_CONCURRENCY jobs. 2 replicas x 2 = about 3,000-4,000 cards an hour.
+  worker:
+    build: ../worker
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on: [redis]
+    deploy:
+      replicas: 2
+
+  # One-off commands with the same settings, e.g. seeding colleges or the smoke test.
+  tools:
+    build: ../api
+    profiles: ["tools"]
+    env_file: ../.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ../scripts:/scripts:ro
+      - ../worker/templates:/worker/templates:ro
+    depends_on: [redis]
+    entrypoint: []
+
+volumes:
+  caddy_data:
+  caddy_config:
+  redisdata:

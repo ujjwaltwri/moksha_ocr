@@ -34,14 +34,22 @@ Full plan: the "Moksha Entry System — 6-Day Build Spec" doc.
 
 **Measured here:** 25,000 passes download in about 3 s of server time per phone (expect 100–150 MB with real face thumbnails, gzip on; do the first download over Wi-Fi the night before); 8 lanes posting 2,000 admissions at once got every sync answered in under 150 ms.
 
-## Deploy checklist
+## Deploy (DigitalOcean + AWS S3/SES)
 
-1. VM (4–8 vCPU) in Mumbai with Docker; managed Postgres; an S3 or GCS bucket (private, with a CORS rule allowing POST from the website's origin).
-2. `python scripts/gen_keys.py` once. `PASS_SIGNING_KEY` into the server `.env`; `PASS_PUBLIC_KEY` into `.env` **and** the gate app build (`--dart-define=PASS_PUBLIC_KEY=...`).
-3. Fill `.env` from `.env.example`: `ADMIN_TOKEN` (long random), `API_PUBLIC_URL` (https), `CORS_ORIGINS`, `STATUS_URL_TEMPLATE`, Turnstile keys, SMTP, `FEST_DAY`, `FEST_DAYS`, `EVENT_ID` (= the app's).
-4. `docker compose -f infra/docker-compose.yml --env-file .env up -d --build` (drop the local postgres and minio services), Caddy in front for HTTPS (`infra/Caddyfile`).
-5. Seed colleges (`scripts/seed_colleges.py`), then `scripts/enqueue_pending.py` if anything registered before the worker ran.
-6. `/admin`: create reviewer links, then one setup QR per gate phone.
+Production runs on one DigitalOcean Droplet (Caddy for HTTPS, API, 2 OCR workers, Redis) with DigitalOcean managed Postgres, an AWS S3 bucket in Mumbai for photos, and Amazon SES for email. The step-by-step guide is the "Deployment Guide" doc; the short version:
+
+```bash
+git clone https://github.com/ujjwaltwri/moksha_ocr && cd moksha_ocr   # main is the deploy branch
+cp .env.example .env && nano .env            # fill in every value (see comments)
+T="docker compose -f infra/docker-compose.prod.yml"
+$T run --rm tools python /scripts/gen_keys.py      # once; put both keys in .env
+$T run --rm tools python /scripts/setup_bucket.py  # S3 bucket: private, encrypted, CORS
+$T up -d --build                                    # migrations run on API start
+$T run --rm tools python /scripts/seed_colleges.py
+python scripts/smoke_test.py https://$API_DOMAIN you@example.com --admin-token <ADMIN_TOKEN>
+```
+
+Package versions are locked in `api/constraints.txt` and `worker/constraints.txt` (tested on Python 3.12, the image's base). Don't unpin OpenCV: version 5 removed the face detector the worker uses.
 
 ## Layout
 

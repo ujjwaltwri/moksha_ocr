@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     env: str = "dev"
     database_url: str = "postgresql+asyncpg://moksha:moksha@localhost:5432/moksha"
     redis_url: str = "redis://localhost:6379/0"
+    db_pool_size: int = 4                       # per API process; 2 processes x (4 + 4 overflow) = 16 connections max
 
     # S3-compatible storage (AWS S3, GCS interop, or MinIO locally)
     s3_bucket: str = "moksha-ids"

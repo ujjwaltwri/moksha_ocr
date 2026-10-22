@@ -38,6 +38,7 @@ This is an entry system for **Moksha**, NSUT's intercollege fest: about 20k–30
 | `day1-registration` (default) | FastAPI app, schema, registration/status/upload endpoints, `/form-config`, pass signing, scripts, Docker Compose, reference HTML pages, OpenAPI spec | Pushed (55a744a); 15 tests pass |
 | `day2-ocr` | OCR worker: imaging, RapidOCR, matching, decision rules, duplicate-card check | Pushed (b562c45); 26 tests pass |
 | `main` | `day2-ocr` + the Flutter gate app in `app/` | Pushed (88ccda9) |
+| `day4-deploy` | To merge into `main`, which is what gets deployed. From `day3-passes-gate`: production compose (Caddy HTTPS, 2 workers), sslmode handling, pinned versions (OpenCV 4.x), bucket setup + smoke-test scripts | Tested on Python 3.12 |
 | `day3-passes-gate` | From `main`: review endpoints + `/review` page, pass issuance + QR email, gate endpoints, device/staff tokens, `/admin` page | 32 API + 31 worker tests pass; full chain and 25k load tested |
 
 **Repository layout:**
