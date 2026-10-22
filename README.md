@@ -39,7 +39,7 @@ Full plan: the "Moksha Entry System — 6-Day Build Spec" doc.
 Production runs on one DigitalOcean Droplet (Caddy for HTTPS, API, 2 OCR workers, Redis) with DigitalOcean managed Postgres, an AWS S3 bucket in Mumbai for photos, and Amazon SES for email. The step-by-step guide is the "Deployment Guide" doc; the short version:
 
 ```bash
-git clone -b day4-deploy https://github.com/ujjwaltwri/moksha_ocr && cd moksha_ocr
+git clone https://github.com/ujjwaltwri/moksha_ocr && cd moksha_ocr   # main is the deploy branch
 cp .env.example .env && nano .env            # fill in every value (see comments)
 T="docker compose -f infra/docker-compose.prod.yml"
 $T run --rm tools python /scripts/gen_keys.py      # once; put both keys in .env
